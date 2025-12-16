@@ -8,6 +8,7 @@ extern "C" {
 #include "/opt/homebrew/opt/sdl2/include/SDL2/SDL.h"
 #include "/opt/homebrew/opt/sdl2/include/SDL2/SDL_main.h"
 #else
+#define SDL_MAIN_HANDLED
 #include "./SDL2-2.0.10/include/SDL.h"
 #include "./SDL2-2.0.10/include/SDL_main.h"
 #endif
