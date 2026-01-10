@@ -30,13 +30,22 @@ extern "C" {
 
 #define LIGHT_ATTACK_FRAMES 15
 #define HEAVY_ATTACK_FRAMES 30
-#define LIGHT_ATTACK_DURATION 0.3
-#define HEAVY_ATTACK_DURATION 0.6
+#define CROUCH_DEFENSE_DURATION 5.0
+#define HEAVY_ATTACK_DURATION 10.0
 
 enum PlayerState {
   STATE_IDLE = 0,
-  STATE_LIGHT_ATTACK = 1,
+  STATE_CROUCH_DEFENSE = 1,
   STATE_HEAVY_ATTACK = 2
+};
+
+struct GameState {
+  double playerX, playerY;
+  double cameraX;
+  double worldTime;
+  int moveLeft, moveRight, moveUp, moveDown;
+  PlayerState state;
+  double attackTimer;
 };
 
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
@@ -93,16 +102,6 @@ void DrawRectangle(SDL_Surface *screen, int x, int y, int width, int height,
   }
 }
 
-struct GameState {
-  double playerX, playerY;
-  double cameraX;
-  double worldTime;
-  int moveLeft, moveRight, moveUp, moveDown;
-  PlayerState state;
-  double attackTimer;
-  int animationFrame;
-};
-
 void InitGame(GameState *game) {
   game->playerX = 100;
   game->playerY = 0;
@@ -114,7 +113,6 @@ void InitGame(GameState *game) {
   game->moveDown = 0;
   game->state = STATE_IDLE;
   game->attackTimer = 0;
-  game->animationFrame = 0;
 }
 
 void DrawSkyGradient(SDL_Surface *screen) {
@@ -149,12 +147,12 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
   dest.h = SPRITE_HEIGHT;
 
   // sprites in first row:
-  // standing(0) | attack_crouch(1) | light_defense_attack(2) |
+  // standing(0) | crouch_defense(1) | light_defense_attack(2) |
   // hand_long_attack(3) | stomach_attack(4) | stomach_attack_prepare(5) |
   // jump_forward(6) | jump_landing(7)
   int spriteIndex = 0;
-  if (game->state == STATE_LIGHT_ATTACK) {
-    spriteIndex = 2; // light_defense_attack for light attack
+  if (game->state == STATE_CROUCH_DEFENSE) {
+    spriteIndex = 1; // crouch_defense for defense
   } else if (game->state == STATE_HEAVY_ATTACK) {
     spriteIndex = 3; // hand_long_attack for heavy attack
   } else {
@@ -172,7 +170,7 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
              double fps, Uint32 outlineColor, Uint32 fillColor) {
   char text[128];
 
-  DrawRectangle(screen, 8, 8, SCREEN_WIDTH - 16, 62, outlineColor, fillColor);
+  DrawRectangle(screen, 8, 8, SCREEN_WIDTH - 16, 50, outlineColor, fillColor);
 
   sprintf(text, "BEAT 'EM UP GAME");
   DrawString(screen, screen->w / 2 - strlen(text) * 12 / 2, 12, text, charset);
@@ -181,11 +179,8 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
           game->worldTime, game->playerX, SCREEN_HEIGHT - game->playerY, fps);
   DrawString(screen, 16, 26, text, charset);
 
-  sprintf(text, "move [WSAD] | light attack [R] | heavy attack [F]");
+  sprintf(text, "exit [ESC] | new game [N] | move [WSAD] | crouch [R] | heavy attack [F]");
   DrawString(screen, 16, 40, text, charset);
-
-  sprintf(text, "exit [ESC] | new game [N]");
-  DrawString(screen, 16, 54, text, charset);
 }
 
 void UpdatePlayerPosition(GameState *game, double delta) {
@@ -219,43 +214,25 @@ void UpdatePlayerPosition(GameState *game, double delta) {
 
 void UpdateAttackState(GameState *game, double delta) {
   if (game->state != STATE_IDLE) {
-    game->attackTimer += delta;
+    game->attackTimer -= delta;
 
-    double attackDuration = 0;
-    int totalFrames = 0;
-
-    if (game->state == STATE_LIGHT_ATTACK) {
-      attackDuration = LIGHT_ATTACK_DURATION;
-      totalFrames = LIGHT_ATTACK_FRAMES;
-    } else if (game->state == STATE_HEAVY_ATTACK) {
-      attackDuration = HEAVY_ATTACK_DURATION;
-      totalFrames = HEAVY_ATTACK_FRAMES;
-    }
-
-    game->animationFrame =
-        (int)(game->attackTimer / attackDuration * totalFrames);
-
-    if (game->attackTimer >= attackDuration) {
+    if (game->attackTimer <= 0) {
       game->state = STATE_IDLE;
-      game->attackTimer = 0;
-      game->animationFrame = 0;
     }
   }
 }
 
 void StartLightAttack(GameState *game) {
   if (game->state == STATE_IDLE) {
-    game->state = STATE_LIGHT_ATTACK;
-    game->attackTimer = 0;
-    game->animationFrame = 0;
+    game->state = STATE_CROUCH_DEFENSE;
+    game->attackTimer = CROUCH_DEFENSE_DURATION;
   }
 }
 
 void StartHeavyAttack(GameState *game) {
   if (game->state == STATE_IDLE) {
     game->state = STATE_HEAVY_ATTACK;
-    game->attackTimer = 0;
-    game->animationFrame = 0;
+    game->attackTimer = HEAVY_ATTACK_DURATION;
   }
 }
 
