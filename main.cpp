@@ -12,11 +12,10 @@ extern "C" {
 #endif
 }
 
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 480
-#define STAGE_WIDTH 1280
-#define STAGE_HEIGHT 480
-#define FLOOR_HEIGHT 140
+#define SCREEN_WIDTH 1000
+#define SCREEN_HEIGHT 600
+#define STAGE_WIDTH 1600
+#define FLOOR_HEIGHT 200
 #define PLAYER_SPEED 150.0
 #define CAMERA_SMOOTH_FACTOR 5.0
 
@@ -24,8 +23,76 @@ extern "C" {
 #define FONT_SRC_WIDTH 20
 #define FONT_SRC_HEIGHT 26
 
-#define SPRITE_WIDTH 46
-#define SPRITE_HEIGHT 50
+#define SPRITE_SRC_WIDTH 46
+#define SPRITE_SRC_HEIGHT 50
+#define SPRITE_WIDTH 64
+#define SPRITE_HEIGHT                                                          \
+  ((int)(SPRITE_SRC_HEIGHT * ((double)SPRITE_WIDTH / SPRITE_SRC_WIDTH)))
+
+#define CROUCH_DEFENSE_DURATION 0.3
+#define HEAVY_ATTACK_DURATION 0.6
+
+#define INPUT_BUFFER_SIZE 10
+#define INPUT_TIMEOUT 0.8 // seconds before input expires
+#define DASH_DURATION 0.3
+#define TRIPLE_ATTACK_DURATION 1.5
+#define COMBO_SEQUENCE_DURATION 2.0
+#define DASH_TAP_THRESHOLD 0.4 // max time for a key press to count as a tap
+
+#define DEBUG_MENU_START 70
+
+enum InputType {
+  INPUT_NONE = 0,
+  INPUT_LIGHT = 1, // R key
+  INPUT_HEAVY = 2, // F key
+  INPUT_UP = 3,
+  INPUT_DOWN = 4,
+  INPUT_LEFT = 5,
+  INPUT_RIGHT = 6
+};
+
+enum PlayerState {
+  STATE_IDLE = 0,
+  STATE_CROUCH_DEFENSE = 1,
+  STATE_HEAVY_ATTACK = 2,
+  STATE_TRIPLE_LIGHT_ATTACK = 3, // Triple R press
+  STATE_TRIPLE_HEAVY_ATTACK = 4, // Triple F press
+  STATE_COMBO_SEQUENCE = 5,      // R-F-R sequence
+  STATE_DASH = 6                 // Quick movement dash
+};
+
+// Structure to hold input buffer entries
+struct InputEntry {
+  InputType type;
+  double timestamp;
+};
+
+// Structure for combo definitions - makes it easy to add new combos
+struct ComboDefinition {
+  InputType sequence[5]; // Max 5 inputs in a combo
+  int length;
+  PlayerState resultState;
+  double duration;
+  const char *name;
+};
+
+struct GameState {
+  double playerX, playerY;
+  double cameraX;
+  double worldTime;
+  int moveLeft, moveRight, moveUp, moveDown;
+  PlayerState state;
+  double attackTimer;
+
+  InputEntry inputBuffer[INPUT_BUFFER_SIZE];
+  int bufferCount;
+  double lastInputTime;
+  int debugMenuEnabled;
+  char currentActionName[64];
+
+  // Track key press times for tap detection
+  double keyPressTime[4]; // W, A, S, D (up, left, down, right)
+};
 
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
                 SDL_Surface *charset) {
@@ -81,13 +148,6 @@ void DrawRectangle(SDL_Surface *screen, int x, int y, int width, int height,
   }
 }
 
-struct GameState {
-  double playerX, playerY;
-  double cameraX;
-  double worldTime;
-  int moveLeft, moveRight, moveUp, moveDown;
-};
-
 void InitGame(GameState *game) {
   game->playerX = 100;
   game->playerY = 0;
@@ -97,19 +157,122 @@ void InitGame(GameState *game) {
   game->moveRight = 0;
   game->moveUp = 0;
   game->moveDown = 0;
+  game->state = STATE_IDLE;
+  game->attackTimer = 0;
+  game->bufferCount = 0;
+  game->lastInputTime = 0;
+  game->debugMenuEnabled = 0;
+  strcpy(game->currentActionName, "idle");
+  // Initialize key press times
+  for (int i = 0; i < 4; i++) {
+    game->keyPressTime[i] = 0;
+  }
+}
+
+// Define all combos - easy to add new ones by adding entries here
+ComboDefinition combos[] = {
+    // Triple light attack (R-R-R)
+    {{INPUT_LIGHT, INPUT_LIGHT, INPUT_LIGHT},
+     3,
+     STATE_TRIPLE_LIGHT_ATTACK,
+     TRIPLE_ATTACK_DURATION,
+     "triple light"},
+    // Triple heavy attack (F-F-F)
+    {{INPUT_HEAVY, INPUT_HEAVY, INPUT_HEAVY},
+     3,
+     STATE_TRIPLE_HEAVY_ATTACK,
+     TRIPLE_ATTACK_DURATION,
+     "triple heavy"},
+    // Combo sequence (R-F-R)
+    {{INPUT_LIGHT, INPUT_HEAVY, INPUT_LIGHT},
+     3,
+     STATE_COMBO_SEQUENCE,
+     COMBO_SEQUENCE_DURATION,
+     "combo sequence"},
+    // Dash combos - double tap movement keys
+    {{INPUT_LEFT, INPUT_LEFT}, 2, STATE_DASH, DASH_DURATION, "dash left"},
+    {{INPUT_RIGHT, INPUT_RIGHT}, 2, STATE_DASH, DASH_DURATION, "dash right"},
+    {{INPUT_UP, INPUT_UP}, 2, STATE_DASH, DASH_DURATION, "dash up"},
+    {{INPUT_DOWN, INPUT_DOWN}, 2, STATE_DASH, DASH_DURATION, "dash down"}};
+const int comboCount = sizeof(combos) / sizeof(ComboDefinition);
+
+// Add input to buffer
+void AddInput(GameState *game, InputType input) {
+  if (game->bufferCount >= INPUT_BUFFER_SIZE) {
+    // Shift buffer left to make room
+    for (int i = 0; i < INPUT_BUFFER_SIZE - 1; i++) {
+      game->inputBuffer[i] = game->inputBuffer[i + 1];
+    }
+    game->bufferCount = INPUT_BUFFER_SIZE - 1;
+  }
+
+  game->inputBuffer[game->bufferCount].type = input;
+  game->inputBuffer[game->bufferCount].timestamp = game->worldTime;
+  game->bufferCount++;
+  game->lastInputTime = game->worldTime;
+}
+
+// Clean expired inputs from buffer
+void CleanInputBuffer(GameState *game) {
+  int writeIdx = 0;
+  for (int i = 0; i < game->bufferCount; i++) {
+    if (game->worldTime - game->inputBuffer[i].timestamp < INPUT_TIMEOUT) {
+      if (writeIdx != i) {
+        game->inputBuffer[writeIdx] = game->inputBuffer[i];
+      }
+      writeIdx++;
+    }
+  }
+  game->bufferCount = writeIdx;
+}
+
+// Check if buffer matches a combo sequence
+bool MatchesCombo(GameState *game, const ComboDefinition *combo) {
+  if (game->bufferCount < combo->length)
+    return false;
+
+  // Check last N inputs match the combo
+  int startIdx = game->bufferCount - combo->length;
+  for (int i = 0; i < combo->length; i++) {
+    if (game->inputBuffer[startIdx + i].type != combo->sequence[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Check for combo matches and execute
+void CheckCombos(GameState *game) {
+  // Allow interrupt of basic attacks with combos, but not combo attacks
+  bool canInterrupt =
+      (game->state == STATE_IDLE || game->state == STATE_CROUCH_DEFENSE ||
+       game->state == STATE_HEAVY_ATTACK);
+  if (!canInterrupt)
+    return;
+
+  for (int i = 0; i < comboCount; i++) {
+    if (MatchesCombo(game, &combos[i])) {
+      game->state = combos[i].resultState;
+      game->attackTimer = combos[i].duration;
+      strcpy(game->currentActionName, combos[i].name);
+      // Clear buffer after successful combo
+      game->bufferCount = 0;
+      return;
+    }
+  }
 }
 
 void DrawSkyGradient(SDL_Surface *screen) {
-  for (int y = 0; y < STAGE_HEIGHT - FLOOR_HEIGHT; y++) {
+  for (int y = 0; y < SCREEN_HEIGHT - FLOOR_HEIGHT; y++) {
     // todo: improve gradient calculation
-    int blue = 0x33 + (0x88 - 0x33) * y / STAGE_HEIGHT - FLOOR_HEIGHT;
+    int blue = 0x33 + (0x88 - 0x33) * y / SCREEN_HEIGHT - FLOOR_HEIGHT;
     Uint32 skyColor = SDL_MapRGB(screen->format, 0x66, 0x99, blue);
     DrawLine(screen, 0, y, SCREEN_WIDTH, 1, 0, skyColor);
   }
 }
 
 void DrawFloor(SDL_Surface *screen, Uint32 brown) {
-  for (int y = STAGE_HEIGHT - FLOOR_HEIGHT; y < SCREEN_HEIGHT; y++) {
+  for (int y = SCREEN_HEIGHT - FLOOR_HEIGHT; y < SCREEN_HEIGHT; y++) {
     DrawLine(screen, 0, y, SCREEN_WIDTH, 1, 0, brown);
   }
 }
@@ -120,22 +283,88 @@ void DrawStage(SDL_Surface *screen, double cameraX, Uint32 black,
   DrawFloor(screen, brown);
 }
 
-void DrawPlayer(SDL_Surface *screen, double playerX, double playerY,
-                double cameraX, SDL_Surface *spritemap) {
-  int screenX = (int)(playerX - cameraX);
-  int screenY = (int)playerY;
+void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
+  int screenX = (int)(game->playerX - game->cameraX);
+  int screenY = (int)game->playerY;
 
   SDL_Rect source, dest;
-  source.w = SPRITE_WIDTH;
-  source.h = SPRITE_HEIGHT;
+  source.w = SPRITE_SRC_WIDTH;
+  source.h = SPRITE_SRC_HEIGHT;
   dest.w = SPRITE_WIDTH;
   dest.h = SPRITE_HEIGHT;
 
-  source.x = 0;
-  source.y = 0;
+  // sprites in first row:
+  // standing(0) | crouch_defense(1) | light_defense_attack(2) |
+  // hand_long_attack(3) | stomach_attack(4) | stomach_attack_prepare(5) |
+  // jump_forward(6) | jump_landing(7)
+  int spriteIndex = 0;
+  int spriteRow = 0;
+
+  if (game->state == STATE_CROUCH_DEFENSE) {
+    spriteIndex = 1; // crouch_defense for defense
+  } else if (game->state == STATE_HEAVY_ATTACK) {
+    spriteIndex = 3; // hand_long_attack for heavy attack
+  } else if (game->state == STATE_TRIPLE_LIGHT_ATTACK) {
+    spriteIndex = 2; // light_defense_attack for triple light
+  } else if (game->state == STATE_TRIPLE_HEAVY_ATTACK) {
+    spriteIndex = 4; // stomach_attack for triple heavy
+  } else if (game->state == STATE_COMBO_SEQUENCE) {
+    spriteIndex = 5; // stomach_attack_prepare for combo
+  } else if (game->state == STATE_DASH) {
+    spriteRow = 2;   // Row 3 (index 2)
+    spriteIndex = 1; // Column 2 (index 1) - dash sprite
+  } else {
+    spriteIndex = 0; // standing idle
+  }
+
+  source.x = spriteIndex * SPRITE_SRC_WIDTH;
+  source.y = spriteRow * SPRITE_SRC_HEIGHT;
   dest.x = screenX;
   dest.y = screenY - SPRITE_HEIGHT;
   SDL_BlitScaled(spritemap, &source, screen, &dest);
+}
+
+void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game) {
+  char text[128];
+  sprintf(text, "DEBUG MENU - Current Action: %s", game->currentActionName);
+  DrawString(screen, 16, DEBUG_MENU_START + 4, text, charset);
+
+  sprintf(text, "Input Buffer (%d):", game->bufferCount);
+  DrawString(screen, 16, DEBUG_MENU_START + 18, text, charset);
+
+  char bufferText[128] = "";
+  for (int i = 0; i < game->bufferCount; i++) {
+    const char *inputName = "?";
+    switch (game->inputBuffer[i].type) {
+    case INPUT_LIGHT:
+      inputName = "R";
+      break;
+    case INPUT_HEAVY:
+      inputName = "F";
+      break;
+    case INPUT_UP:
+      inputName = "W";
+      break;
+    case INPUT_DOWN:
+      inputName = "S";
+      break;
+    case INPUT_LEFT:
+      inputName = "A";
+      break;
+    case INPUT_RIGHT:
+      inputName = "D";
+      break;
+    }
+    strcat(bufferText, inputName);
+    if (i < game->bufferCount - 1)
+      strcat(bufferText, "-");
+  }
+  sprintf(text, "[%s]", bufferText);
+  DrawString(screen, 16, DEBUG_MENU_START + 32, text, charset);
+
+  sprintf(text, "Time since last input: %.2lf s",
+          game->worldTime - game->lastInputTime);
+  DrawString(screen, 16, DEBUG_MENU_START + 46, text, charset);
 }
 
 void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
@@ -151,33 +380,82 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
           game->worldTime, game->playerX, SCREEN_HEIGHT - game->playerY, fps);
   DrawString(screen, 16, 26, text, charset);
 
-  sprintf(text, "exit [ESC] | new game [N] | move [WSAD]");
+  sprintf(text, "exit [ESC] | new game [N] | move [WSAD] | crouch [R] | heavy "
+                "attack [F] | debug menu [B]");
   DrawString(screen, 16, 40, text, charset);
+
+  if (game->debugMenuEnabled) {
+    DrawRectangle(screen, 8, DEBUG_MENU_START, SCREEN_WIDTH - 16, 60,
+                  outlineColor, fillColor);
+    DrawDebugMenu(screen, charset, game);
+  }
 }
 
 void UpdatePlayerPosition(GameState *game, double delta) {
   double dx = 0, dy = 0;
 
-  if (game->moveLeft)
-    dx -= PLAYER_SPEED * delta;
-  if (game->moveRight)
-    dx += PLAYER_SPEED * delta;
-  if (game->moveUp)
-    dy -= PLAYER_SPEED * delta;
-  if (game->moveDown)
-    dy += PLAYER_SPEED * delta;
+  // don't allow movement during attacks
+  if (game->state == STATE_IDLE) {
+    if (game->moveLeft)
+      dx -= PLAYER_SPEED * delta;
+    if (game->moveRight)
+      dx += PLAYER_SPEED * delta;
+    if (game->moveUp)
+      dy -= PLAYER_SPEED * delta;
+    if (game->moveDown)
+      dy += PLAYER_SPEED * delta;
 
-  game->playerX += dx;
-  game->playerY += dy;
+    game->playerX += dx;
+    game->playerY += dy;
+  }
 
+  // clamp player position within stage bounds
   if (game->playerX < 0)
     game->playerX = 0;
   if (game->playerX > STAGE_WIDTH - SPRITE_WIDTH)
     game->playerX = STAGE_WIDTH - SPRITE_WIDTH;
-  if (game->playerY < STAGE_HEIGHT - FLOOR_HEIGHT + 5)
-    game->playerY = STAGE_HEIGHT - FLOOR_HEIGHT + 5;
+  if (game->playerY < SCREEN_HEIGHT - FLOOR_HEIGHT + 5)
+    game->playerY = SCREEN_HEIGHT - FLOOR_HEIGHT + 5;
   if (game->playerY > SCREEN_HEIGHT)
     game->playerY = SCREEN_HEIGHT;
+}
+
+void UpdateAttackState(GameState *game, double delta) {
+  if (game->state != STATE_IDLE) {
+    game->attackTimer -= delta;
+
+    if (game->attackTimer <= 0) {
+      game->state = STATE_IDLE;
+      strcpy(game->currentActionName, "idle");
+    }
+  }
+
+  // Clean expired inputs from buffer
+  CleanInputBuffer(game);
+}
+
+void StartLightAttack(GameState *game) {
+  AddInput(game, INPUT_LIGHT);
+  CheckCombos(game);
+
+  // If no combo was triggered, do basic attack
+  if (game->state == STATE_IDLE) {
+    game->state = STATE_CROUCH_DEFENSE;
+    game->attackTimer = CROUCH_DEFENSE_DURATION;
+    strcpy(game->currentActionName, "crouch defense");
+  }
+}
+
+void StartHeavyAttack(GameState *game) {
+  AddInput(game, INPUT_HEAVY);
+  CheckCombos(game);
+
+  // If no combo was triggered, do basic attack
+  if (game->state == STATE_IDLE) {
+    game->state = STATE_HEAVY_ATTACK;
+    game->attackTimer = HEAVY_ATTACK_DURATION;
+    strcpy(game->currentActionName, "heavy attack");
+  }
 }
 
 void UpdateCamera(GameState *game, double delta) {
@@ -276,12 +554,13 @@ int main(int argc, char **argv) {
 
     game.worldTime += delta;
     UpdatePlayerPosition(&game, delta);
+    UpdateAttackState(&game, delta);
     UpdateCamera(&game, delta);
 
     SDL_FillRect(screen, NULL, black);
 
     DrawStage(screen, game.cameraX, black, brown);
-    DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, spritemap);
+    DrawPlayer(screen, spritemap, &game);
 
     fpsTimer += delta;
     if (fpsTimer > 0.5) {
@@ -303,24 +582,60 @@ int main(int argc, char **argv) {
           quit = 1;
         else if (event.key.keysym.sym == SDLK_n)
           InitGame(&game);
-        else if (event.key.keysym.sym == SDLK_a)
+        else if (event.key.keysym.sym == SDLK_b)
+          game.debugMenuEnabled = !game.debugMenuEnabled;
+        else if (event.key.keysym.sym == SDLK_a) {
+          if (!event.key.repeat) {                 // Ignore key repeats
+            game.keyPressTime[1] = game.worldTime; // Track press time for left
+          }
           game.moveLeft = 1;
-        else if (event.key.keysym.sym == SDLK_d)
+        } else if (event.key.keysym.sym == SDLK_d) {
+          if (!event.key.repeat) {
+            game.keyPressTime[3] = game.worldTime; // Track press time for right
+          }
           game.moveRight = 1;
-        else if (event.key.keysym.sym == SDLK_w)
+        } else if (event.key.keysym.sym == SDLK_w) {
+          if (!event.key.repeat) {
+            game.keyPressTime[0] = game.worldTime; // Track press time for up
+          }
           game.moveUp = 1;
-        else if (event.key.keysym.sym == SDLK_s)
+        } else if (event.key.keysym.sym == SDLK_s) {
+          if (!event.key.repeat) {
+            game.keyPressTime[2] = game.worldTime; // Track press time for down
+          }
           game.moveDown = 1;
+        } else if (event.key.keysym.sym == SDLK_r)
+          StartLightAttack(&game);
+        else if (event.key.keysym.sym == SDLK_f)
+          StartHeavyAttack(&game);
         break;
       case SDL_KEYUP:
-        if (event.key.keysym.sym == SDLK_a)
+        if (event.key.keysym.sym == SDLK_a) {
           game.moveLeft = 0;
-        else if (event.key.keysym.sym == SDLK_d)
+          // Only add to buffer if it was a tap (quick press)
+          if (game.worldTime - game.keyPressTime[1] < DASH_TAP_THRESHOLD) {
+            AddInput(&game, INPUT_LEFT);
+            CheckCombos(&game);
+          }
+        } else if (event.key.keysym.sym == SDLK_d) {
           game.moveRight = 0;
-        else if (event.key.keysym.sym == SDLK_w)
+          if (game.worldTime - game.keyPressTime[3] < DASH_TAP_THRESHOLD) {
+            AddInput(&game, INPUT_RIGHT);
+            CheckCombos(&game);
+          }
+        } else if (event.key.keysym.sym == SDLK_w) {
           game.moveUp = 0;
-        else if (event.key.keysym.sym == SDLK_s)
+          if (game.worldTime - game.keyPressTime[0] < DASH_TAP_THRESHOLD) {
+            AddInput(&game, INPUT_UP);
+            CheckCombos(&game);
+          }
+        } else if (event.key.keysym.sym == SDLK_s) {
           game.moveDown = 0;
+          if (game.worldTime - game.keyPressTime[2] < DASH_TAP_THRESHOLD) {
+            AddInput(&game, INPUT_DOWN);
+            CheckCombos(&game);
+          }
+        }
         break;
       case SDL_QUIT:
         quit = 1;
