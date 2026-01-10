@@ -38,7 +38,7 @@ void DrawString(SDL_Surface *screen, int x, int y, const char *text,
       source.y = (character / 16) * 24;
       dest.x = x;
       dest.y = y;
-      SDL_BlitSurface(charset, &source, screen, &dest);
+      SDL_BlitScaled(charset, &source, screen, &dest);
     }
     x += 12;
     text++;
@@ -160,7 +160,7 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
   DrawString(screen, screen->w / 2 - strlen(text) * 12 / 2, 8, text, charset);
 
   sprintf(text, "Time: %.1lf s | Position: (%.0lf, %.0lf) | FPS: %.0lf",
-          game->worldTime, game->playerX, game->playerY - FLOOR_Y, fps);
+          game->worldTime, game->playerX, SCREEN_HEIGHT - game->playerY, fps);
   DrawString(screen, 12, 22, text, charset);
 
   sprintf(text, "ESC-exit | N-new game | WSAD-move");
