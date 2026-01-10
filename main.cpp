@@ -36,6 +36,7 @@ extern "C" {
 #define DASH_DURATION 0.3
 #define TRIPLE_ATTACK_DURATION 1.5
 #define COMBO_SEQUENCE_DURATION 2.0
+#define DASH_TAP_THRESHOLD 0.2  // max time for a key press to count as a tap
 
 enum InputType {
   INPUT_NONE = 0,
@@ -85,6 +86,9 @@ struct GameState {
   double lastInputTime;
   int devModeEnabled;
   char currentActionName[64];
+  
+  // Track key press times for tap detection
+  double keyPressTime[4];  // W, A, S, D (up, left, down, right)
 };
 
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
@@ -156,6 +160,10 @@ void InitGame(GameState *game) {
   game->lastInputTime = 0;
   game->devModeEnabled = 0;
   strcpy(game->currentActionName, "idle");
+  // Initialize key press times
+  for (int i = 0; i < 4; i++) {
+    game->keyPressTime[i] = 0;
+  }
 }
 
 // Define all combos - easy to add new ones by adding entries here
@@ -220,7 +228,11 @@ bool MatchesCombo(GameState *game, const ComboDefinition *combo) {
 
 // Check for combo matches and execute
 void CheckCombos(GameState *game) {
-  if (game->state != STATE_IDLE) return;  // Only check combos when idle
+  // Allow interrupt of basic attacks with combos, but not combo attacks
+  bool canInterrupt = (game->state == STATE_IDLE || 
+                       game->state == STATE_CROUCH_DEFENSE || 
+                       game->state == STATE_HEAVY_ATTACK);
+  if (!canInterrupt) return;
   
   for (int i = 0; i < comboCount; i++) {
     if (MatchesCombo(game, &combos[i])) {
@@ -540,24 +552,28 @@ int main(int argc, char **argv) {
         else if (event.key.keysym.sym == SDLK_b)
           game.devModeEnabled = !game.devModeEnabled;  // Toggle dev mode
         else if (event.key.keysym.sym == SDLK_a) {
+          if (!event.key.repeat) {  // Ignore key repeats
+            game.keyPressTime[1] = game.worldTime;  // Track press time for left
+          }
           game.moveLeft = 1;
-          AddInput(&game, INPUT_LEFT);
-          CheckCombos(&game);
         }
         else if (event.key.keysym.sym == SDLK_d) {
+          if (!event.key.repeat) {
+            game.keyPressTime[3] = game.worldTime;  // Track press time for right
+          }
           game.moveRight = 1;
-          AddInput(&game, INPUT_RIGHT);
-          CheckCombos(&game);
         }
         else if (event.key.keysym.sym == SDLK_w) {
+          if (!event.key.repeat) {
+            game.keyPressTime[0] = game.worldTime;  // Track press time for up
+          }
           game.moveUp = 1;
-          AddInput(&game, INPUT_UP);
-          CheckCombos(&game);
         }
         else if (event.key.keysym.sym == SDLK_s) {
+          if (!event.key.repeat) {
+            game.keyPressTime[2] = game.worldTime;  // Track press time for down
+          }
           game.moveDown = 1;
-          AddInput(&game, INPUT_DOWN);
-          CheckCombos(&game);
         }
         else if (event.key.keysym.sym == SDLK_r)
           StartLightAttack(&game);
@@ -565,14 +581,35 @@ int main(int argc, char **argv) {
           StartHeavyAttack(&game);
         break;
       case SDL_KEYUP:
-        if (event.key.keysym.sym == SDLK_a)
+        if (event.key.keysym.sym == SDLK_a) {
           game.moveLeft = 0;
-        else if (event.key.keysym.sym == SDLK_d)
+          // Only add to buffer if it was a tap (quick press)
+          if (game.worldTime - game.keyPressTime[1] < DASH_TAP_THRESHOLD) {
+            AddInput(&game, INPUT_LEFT);
+            CheckCombos(&game);
+          }
+        }
+        else if (event.key.keysym.sym == SDLK_d) {
           game.moveRight = 0;
-        else if (event.key.keysym.sym == SDLK_w)
+          if (game.worldTime - game.keyPressTime[3] < DASH_TAP_THRESHOLD) {
+            AddInput(&game, INPUT_RIGHT);
+            CheckCombos(&game);
+          }
+        }
+        else if (event.key.keysym.sym == SDLK_w) {
           game.moveUp = 0;
-        else if (event.key.keysym.sym == SDLK_s)
+          if (game.worldTime - game.keyPressTime[0] < DASH_TAP_THRESHOLD) {
+            AddInput(&game, INPUT_UP);
+            CheckCombos(&game);
+          }
+        }
+        else if (event.key.keysym.sym == SDLK_s) {
           game.moveDown = 0;
+          if (game.worldTime - game.keyPressTime[2] < DASH_TAP_THRESHOLD) {
+            AddInput(&game, INPUT_DOWN);
+            CheckCombos(&game);
+          }
+        }
         break;
       case SDL_QUIT:
         quit = 1;
