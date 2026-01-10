@@ -244,7 +244,7 @@ void CleanInputBuffer(GameState *game) {
   game->bufferCount = writeIdx;
 }
 
-bool MatchesCombo(GameState *game, const ComboDefinition *combo) {
+bool MatchesCombo(const GameState *game, const ComboDefinition *combo) {
   if (game->bufferCount < combo->length)
     return false;
 
