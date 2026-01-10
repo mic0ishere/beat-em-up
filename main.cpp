@@ -114,7 +114,7 @@ void DrawFloor(SDL_Surface *screen, Uint32 brown) {
   }
 }
 
-void DrawStage(SDL_Surface *screen, double cameraX, Uint32 black, Uint32 gray,
+void DrawStage(SDL_Surface *screen, double cameraX, Uint32 black,
                Uint32 brown) {
   DrawSkyGradient(screen);
   DrawFloor(screen, brown);
@@ -139,20 +139,20 @@ void DrawPlayer(SDL_Surface *screen, double playerX, double playerY,
 }
 
 void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
-             double fps, Uint32 red, Uint32 blue) {
+             double fps, Uint32 outlineColor, Uint32 fillColor) {
   char text[128];
 
-  DrawRectangle(screen, 4, 4, SCREEN_WIDTH - 8, 50, red, blue);
+  DrawRectangle(screen, 8, 8, SCREEN_WIDTH - 16, 50, outlineColor, fillColor);
 
-  sprintf(text, "Beat 'em Up Game");
-  DrawString(screen, screen->w / 2 - strlen(text) * 12 / 2, 8, text, charset);
+  sprintf(text, "BEAT 'EM UP GAME");
+  DrawString(screen, screen->w / 2 - strlen(text) * 12 / 2, 12, text, charset);
 
-  sprintf(text, "Time: %.1lf s | Position: (%.0lf, %.0lf) | FPS: %.0lf",
+  sprintf(text, "time: %.1lf s | position: (%.0lf, %.0lf) | fps: %.0lf",
           game->worldTime, game->playerX, SCREEN_HEIGHT - game->playerY, fps);
-  DrawString(screen, 12, 22, text, charset);
+  DrawString(screen, 16, 26, text, charset);
 
-  sprintf(text, "ESC-exit | N-new game | WSAD-move");
-  DrawString(screen, 12, 36, text, charset);
+  sprintf(text, "exit [ESC] | new game [N] | move [WSAD]");
+  DrawString(screen, 16, 40, text, charset);
 }
 
 void UpdatePlayerPosition(GameState *game, double delta) {
@@ -258,10 +258,6 @@ int main(int argc, char **argv) {
   SDL_SetColorKey(spritemap, true, 0x000000);
 
   Uint32 black = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
-  Uint32 green = SDL_MapRGB(screen->format, 0x00, 0xFF, 0x00);
-  Uint32 red = SDL_MapRGB(screen->format, 0xFF, 0x00, 0x00);
-  Uint32 blue = SDL_MapRGB(screen->format, 0x11, 0x11, 0xCC);
-  Uint32 gray = SDL_MapRGB(screen->format, 0x80, 0x80, 0x80);
   Uint32 brown = SDL_MapRGB(screen->format, 0x8B, 0x4F, 0x2A);
 
   InitGame(&game);
@@ -284,7 +280,7 @@ int main(int argc, char **argv) {
 
     SDL_FillRect(screen, NULL, black);
 
-    DrawStage(screen, game.cameraX, black, gray, brown);
+    DrawStage(screen, game.cameraX, black, brown);
     DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, spritemap);
 
     fpsTimer += delta;
@@ -294,7 +290,7 @@ int main(int argc, char **argv) {
       fpsTimer -= 0.5;
     }
 
-    DrawHUD(screen, charset, &game, fps, red, blue);
+    DrawHUD(screen, charset, &game, fps, black, black);
 
     SDL_UpdateTexture(screenTexture, NULL, screen->pixels, screen->pitch);
     SDL_RenderCopy(renderer, screenTexture, NULL, NULL);
