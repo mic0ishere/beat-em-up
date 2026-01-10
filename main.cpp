@@ -25,6 +25,9 @@ extern "C" {
 #define FONT_SRC_WIDTH 20
 #define FONT_SRC_HEIGHT 26
 
+#define SPRITE_WIDTH 46
+#define SPRITE_HEIGHT 50
+
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
                 SDL_Surface *charset) {
 
@@ -50,6 +53,22 @@ void DrawString(SDL_Surface *screen, int x, int y, const char *text,
     x += FONT_SIZE;
     text++;
   }
+}
+
+void DrawPlayerSprite(SDL_Surface *screen, int x, int y,
+                      SDL_Surface *spritemap) {
+
+  SDL_Rect source, dest;
+  source.w = SPRITE_WIDTH;
+  source.h = SPRITE_HEIGHT;
+  dest.w = SPRITE_WIDTH;
+  dest.h = SPRITE_HEIGHT;
+
+  source.x = 0;
+  source.y = 0;
+  dest.x = x;
+  dest.y = y;
+  SDL_BlitScaled(spritemap, &source, screen, &dest);
 }
 
 void DrawPixel(SDL_Surface *surface, int x, int y, Uint32 color) {
@@ -92,7 +111,7 @@ void InitGame(GameState *game) {
   game->playerY = FLOOR_Y;
   game->cameraX = 0;
   game->worldTime = 0;
-  game->gameActive = true;
+  game->gameActive = false;
   game->moveLeft = 0;
   game->moveRight = 0;
   game->moveUp = 0;
@@ -146,16 +165,18 @@ void DrawStage(SDL_Surface *screen, double cameraX, Uint32 black, Uint32 gray,
 }
 
 void DrawPlayer(SDL_Surface *screen, double playerX, double playerY,
-                double cameraX, Uint32 black, Uint32 red, Uint32 green) {
+                double cameraX, SDL_Surface *spritemap) {
   int screenX = (int)(playerX - cameraX);
   int screenY = (int)playerY;
 
-  DrawRectangle(screen, screenX - 10, screenY - 30, 20, 30, black, red);
-  DrawRectangle(screen, screenX - 8, screenY - 45, 16, 15, black, green);
-  DrawRectangle(screen, screenX - 15, screenY - 25, 5, 15, black, red);
-  DrawRectangle(screen, screenX + 10, screenY - 25, 5, 15, black, red);
-  DrawRectangle(screen, screenX - 8, screenY, 6, 10, black, red);
-  DrawRectangle(screen, screenX + 2, screenY, 6, 10, black, red);
+  // DrawRectangle(screen, screenX - 10, screenY - 30, 20, 30, black, red);
+  // DrawRectangle(screen, screenX - 8, screenY - 45, 16, 15, black, green);
+  // DrawRectangle(screen, screenX - 15, screenY - 25, 5, 15, black, red);
+  // DrawRectangle(screen, screenX + 10, screenY - 25, 5, 15, black, red);
+  // DrawRectangle(screen, screenX - 8, screenY, 6, 10, black, red);
+  // DrawRectangle(screen, screenX + 2, screenY, 6, 10, black, red);
+  DrawPlayerSprite(screen, screenX - SPRITE_WIDTH / 2, screenY - SPRITE_HEIGHT,
+                   spritemap);
 }
 
 void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
@@ -223,12 +244,9 @@ void CleanupSDL(SDL_Surface *charset, SDL_Surface *screen, SDL_Texture *texture,
   SDL_Quit();
 }
 
-#ifdef __cplusplus
-extern "C"
-#endif
-    int main(int argc, char **argv) {
+int main(int argc, char **argv) {
   SDL_Event event;
-  SDL_Surface *screen, *charset;
+  SDL_Surface *screen, *charset, *spritemap;
   SDL_Texture *screenTexture;
   SDL_Window *window;
   SDL_Renderer *renderer;
@@ -272,6 +290,14 @@ extern "C"
   }
   SDL_SetColorKey(charset, true, 0x000000);
 
+  spritemap = SDL_LoadBMP("./player_sprite.bmp");
+  if (spritemap == NULL) {
+    printf("SDL_LoadBMP(player_sprite.bmp) error: %s\n", SDL_GetError());
+    CleanupSDL(charset, screen, screenTexture, renderer, window);
+    return 1;
+  }
+  SDL_SetColorKey(spritemap, true, 0x000000);
+
   Uint32 black = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
   Uint32 green = SDL_MapRGB(screen->format, 0x00, 0xFF, 0x00);
   Uint32 red = SDL_MapRGB(screen->format, 0xFF, 0x00, 0x00);
@@ -302,8 +328,7 @@ extern "C"
 
     if (game.gameActive) {
       DrawStage(screen, game.cameraX, black, gray, brown);
-      DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, black, red,
-                 green);
+      DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, spritemap);
     } else {
       char text[128];
       DrawRectangle(screen, SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50, 300,
