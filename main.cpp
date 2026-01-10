@@ -12,11 +12,10 @@ extern "C" {
 #endif
 }
 
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 480
-#define STAGE_WIDTH 1280
-#define STAGE_HEIGHT 480
-#define FLOOR_HEIGHT 140
+#define SCREEN_WIDTH 1000
+#define SCREEN_HEIGHT 600
+#define STAGE_WIDTH 1600
+#define FLOOR_HEIGHT 200
 #define PLAYER_SPEED 150.0
 #define CAMERA_SMOOTH_FACTOR 5.0
 
@@ -24,16 +23,16 @@ extern "C" {
 #define FONT_SRC_WIDTH 20
 #define FONT_SRC_HEIGHT 26
 
-#define SPRITE_WIDTH 46
-#define SPRITE_HEIGHT 50
+#define SPRITE_SRC_WIDTH 46
+#define SPRITE_SRC_HEIGHT 50
+#define SPRITE_WIDTH 64
+#define SPRITE_HEIGHT ((int)(SPRITE_SRC_HEIGHT * ((double)SPRITE_WIDTH / SPRITE_SRC_WIDTH)))
 
-// Animation constants
 #define LIGHT_ATTACK_FRAMES 15
 #define HEAVY_ATTACK_FRAMES 30
 #define LIGHT_ATTACK_DURATION 0.3
 #define HEAVY_ATTACK_DURATION 0.6
 
-// Player states
 enum PlayerState {
   STATE_IDLE = 0,
   STATE_LIGHT_ATTACK = 1,
@@ -119,16 +118,16 @@ void InitGame(GameState *game) {
 }
 
 void DrawSkyGradient(SDL_Surface *screen) {
-  for (int y = 0; y < STAGE_HEIGHT - FLOOR_HEIGHT; y++) {
+  for (int y = 0; y < SCREEN_HEIGHT - FLOOR_HEIGHT; y++) {
     // todo: improve gradient calculation
-    int blue = 0x33 + (0x88 - 0x33) * y / STAGE_HEIGHT - FLOOR_HEIGHT;
+    int blue = 0x33 + (0x88 - 0x33) * y / SCREEN_HEIGHT - FLOOR_HEIGHT;
     Uint32 skyColor = SDL_MapRGB(screen->format, 0x66, 0x99, blue);
     DrawLine(screen, 0, y, SCREEN_WIDTH, 1, 0, skyColor);
   }
 }
 
 void DrawFloor(SDL_Surface *screen, Uint32 brown) {
-  for (int y = STAGE_HEIGHT - FLOOR_HEIGHT; y < SCREEN_HEIGHT; y++) {
+  for (int y = SCREEN_HEIGHT - FLOOR_HEIGHT; y < SCREEN_HEIGHT; y++) {
     DrawLine(screen, 0, y, SCREEN_WIDTH, 1, 0, brown);
   }
 }
@@ -144,8 +143,8 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
   int screenY = (int)game->playerY;
 
   SDL_Rect source, dest;
-  source.w = SPRITE_WIDTH;
-  source.h = SPRITE_HEIGHT;
+  source.w = SPRITE_SRC_WIDTH;
+  source.h = SPRITE_SRC_HEIGHT;
   dest.w = SPRITE_WIDTH;
   dest.h = SPRITE_HEIGHT;
 
@@ -162,7 +161,7 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
     spriteIndex = 0; // standing idle
   }
 
-  source.x = spriteIndex * SPRITE_WIDTH;
+  source.x = spriteIndex * SPRITE_SRC_WIDTH;
   source.y = 0;
   dest.x = screenX;
   dest.y = screenY - SPRITE_HEIGHT;
@@ -192,7 +191,7 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
 void UpdatePlayerPosition(GameState *game, double delta) {
   double dx = 0, dy = 0;
 
-  // Don't allow movement during attacks
+  // don't allow movement during attacks
   if (game->state == STATE_IDLE) {
     if (game->moveLeft)
       dx -= PLAYER_SPEED * delta;
@@ -207,12 +206,13 @@ void UpdatePlayerPosition(GameState *game, double delta) {
     game->playerY += dy;
   }
 
+  // clamp player position within stage bounds
   if (game->playerX < 0)
     game->playerX = 0;
   if (game->playerX > STAGE_WIDTH - SPRITE_WIDTH)
     game->playerX = STAGE_WIDTH - SPRITE_WIDTH;
-  if (game->playerY < STAGE_HEIGHT - FLOOR_HEIGHT + 5)
-    game->playerY = STAGE_HEIGHT - FLOOR_HEIGHT + 5;
+  if (game->playerY < SCREEN_HEIGHT - FLOOR_HEIGHT + 5)
+    game->playerY = SCREEN_HEIGHT - FLOOR_HEIGHT + 5;
   if (game->playerY > SCREEN_HEIGHT)
     game->playerY = SCREEN_HEIGHT;
 }
