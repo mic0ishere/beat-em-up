@@ -28,19 +28,15 @@ extern "C" {
 #define SPRITE_WIDTH 64
 #define SPRITE_HEIGHT ((int)(SPRITE_SRC_HEIGHT * ((double)SPRITE_WIDTH / SPRITE_SRC_WIDTH)))
 
-#define LIGHT_ATTACK_FRAMES 15
-#define HEAVY_ATTACK_FRAMES 30
-#define CROUCH_DEFENSE_DURATION 5.0
-#define HEAVY_ATTACK_DURATION 10.0
+#define CROUCH_DEFENSE_DURATION 0.3
+#define HEAVY_ATTACK_DURATION 0.6
 
-// Combo system constants
 #define INPUT_BUFFER_SIZE 10
 #define INPUT_TIMEOUT 0.8  // seconds before input expires
 #define DASH_DURATION 0.3
 #define TRIPLE_ATTACK_DURATION 1.5
 #define COMBO_SEQUENCE_DURATION 2.0
 
-// Input types for combo buffer
 enum InputType {
   INPUT_NONE = 0,
   INPUT_LIGHT = 1,  // R key
@@ -84,11 +80,10 @@ struct GameState {
   PlayerState state;
   double attackTimer;
   
-  // Combo system
   InputEntry inputBuffer[INPUT_BUFFER_SIZE];
   int bufferCount;
   double lastInputTime;
-  int devModeEnabled;  // Toggle with 'B' key
+  int devModeEnabled;
   char currentActionName[64];
 };
 
