@@ -18,17 +18,13 @@ extern "C" {
 #define SCREEN_HEIGHT 480
 
 // Game constants
-#define STAGE_WIDTH 2400  // Stage is wider than screen for scrolling
+#define STAGE_WIDTH 2400 // Stage is wider than screen for scrolling
 #define STAGE_HEIGHT 480
-#define FLOOR_Y 350       // Floor y-coordinate
-#define FLOOR_HEIGHT 130  // Height of the floor area
+#define FLOOR_Y 350        // Floor y-coordinate
+#define FLOOR_HEIGHT 130   // Height of the floor area
 #define PLAYER_SPEED 150.0 // Pixels per second
 #define CAMERA_GRACE 200   // Grace space before camera starts following
 
-// narysowanie napisu txt na powierzchni screen, zaczynaj�c od punktu (x, y)
-// charset to bitmapa 128x128 zawieraj�ca znaki
-// draw a text txt on surface screen, starting from the point (x, y)
-// charset is a 128x128 bitmap containing character images
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
                 SDL_Surface *charset) {
   int px, py, c;
@@ -51,10 +47,6 @@ void DrawString(SDL_Surface *screen, int x, int y, const char *text,
   };
 };
 
-// narysowanie na ekranie screen powierzchni sprite w punkcie (x, y)
-// (x, y) to punkt �rodka obrazka sprite na ekranie
-// draw a surface sprite on a surface screen in point (x, y)
-// (x, y) is the center of sprite on screen
 void DrawSurface(SDL_Surface *screen, SDL_Surface *sprite, int x, int y) {
   SDL_Rect dest;
   dest.x = x - sprite->w / 2;
@@ -64,18 +56,11 @@ void DrawSurface(SDL_Surface *screen, SDL_Surface *sprite, int x, int y) {
   SDL_BlitSurface(sprite, NULL, screen, &dest);
 };
 
-// rysowanie pojedynczego pixela
-// draw a single pixel
 void DrawPixel(SDL_Surface *surface, int x, int y, Uint32 color) {
   int bpp = surface->format->BytesPerPixel;
   Uint8 *p = (Uint8 *)surface->pixels + y * surface->pitch + x * bpp;
   *(Uint32 *)p = color;
 };
-
-// rysowanie linii o d�ugo�ci l w pionie (gdy dx = 0, dy = 1)
-// b�d� poziomie (gdy dx = 1, dy = 0)
-// draw a vertical (when dx = 0, dy = 1) or horizontal (when dx = 1, dy = 0)
-// line
 void DrawLine(SDL_Surface *screen, int x, int y, int l, int dx, int dy,
               Uint32 color) {
   for (int i = 0; i < l; i++) {
@@ -100,10 +85,10 @@ void DrawRectangle(SDL_Surface *screen, int x, int y, int l, int k,
 
 // Game state structure
 struct GameState {
-  double playerX, playerY;  // Player position
-  double cameraX;           // Camera X position
-  double worldTime;         // Elapsed game time
-  bool gameActive;          // Is game in progress
+  double playerX, playerY;                   // Player position
+  double cameraX;                            // Camera X position
+  double worldTime;                          // Elapsed game time
+  bool gameActive;                           // Is game in progress
   int moveLeft, moveRight, moveUp, moveDown; // Movement flags
 };
 
@@ -187,8 +172,8 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
   DrawString(screen, screen->w / 2 - strlen(text) * 8 / 2, 10, text, charset);
 
   // Time and position info
-  sprintf(text, "Time: %.1lf s | Position: %.0lf | FPS: %.0lf",
-          game->worldTime, game->playerX, fps);
+  sprintf(text, "Time: %.1lf s | Position: %.0lf | FPS: %.0lf", game->worldTime,
+          game->playerX, fps);
   DrawString(screen, 12, 26, text, charset);
 
   // Controls
@@ -210,25 +195,11 @@ extern "C"
   SDL_Renderer *renderer;
   GameState game;
 
-  // okno konsoli nie jest widoczne, je�eli chcemy zobaczy�
-  // komunikaty wypisywane printf-em trzeba w opcjach:
-  // project -> szablon2 properties -> Linker -> System -> Subsystem
-  // zmieni� na "Console"
-  // console window is not visible, to see the printf output
-  // the option:
-  // project -> szablon2 properties -> Linker -> System -> Subsystem
-  // must be changed to "Console"
-  printf("wyjscie printfa trafia do tego okienka\n");
-  printf("printf output goes here\n");
-
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
     printf("SDL_Init error: %s\n", SDL_GetError());
     return 1;
   }
 
-  // tryb pe�noekranowy / fullscreen mode
-  //	rc = SDL_CreateWindowAndRenderer(0, 0, SDL_WINDOW_FULLSCREEN_DESKTOP,
-  //	                                 &window, &renderer);
   rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0, &window,
                                    &renderer);
   if (rc != 0) {
@@ -253,7 +224,6 @@ extern "C"
   // wy��czenie widoczno�ci kursora myszy
   SDL_ShowCursor(SDL_DISABLE);
 
-  // wczytanie obrazka cs8x8.bmp
   charset = SDL_LoadBMP("./cs8x8.bmp");
   if (charset == NULL) {
     printf("SDL_LoadBMP(cs8x8.bmp) error: %s\n", SDL_GetError());
@@ -347,8 +317,8 @@ extern "C"
                  czerwony, zielony);
     } else {
       // Game over or not started screen
-      DrawRectangle(screen, SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50,
-                    300, 100, czerwony, niebieski);
+      DrawRectangle(screen, SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50, 300,
+                    100, czerwony, niebieski);
       sprintf(text, "Press 'N' to start");
       DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 8 / 2,
                  SCREEN_HEIGHT / 2 - 10, text, charset);
@@ -409,7 +379,6 @@ extern "C"
     frames++;
   };
 
-  // zwolnienie powierzchni / freeing all surfaces
   SDL_FreeSurface(charset);
   SDL_FreeSurface(screen);
   SDL_DestroyTexture(scrtex);
