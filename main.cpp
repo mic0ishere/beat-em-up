@@ -140,6 +140,17 @@ struct GameState {
   double keyPressTime[4];
 };
 
+struct SDLResources {
+  SDL_Window *window;
+  SDL_Renderer *renderer;
+  SDL_Surface *screen;
+  SDL_Texture *screenTexture;
+  SDL_Surface *charset;
+  SDL_Surface *spritemap;
+  SDL_Surface *cloudTexture;
+  SDL_Surface *floorTexture;
+};
+
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
                 SDL_Surface *charset) {
   SDL_Rect source, dest;
@@ -244,7 +255,7 @@ void CleanInputBuffer(GameState *game) {
   game->bufferCount = writeIdx;
 }
 
-bool MatchesCombo(const GameState *game, const ComboDefinition *combo) {
+bool MatchesCombo(GameState *game, ComboDefinition *combo) {
   if (game->bufferCount < combo->length)
     return false;
 
@@ -401,8 +412,9 @@ void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game) {
       inputName = "D";
       break;
     }
-    bufferPos += snprintf(bufferText + bufferPos, sizeof(bufferText) - bufferPos,
-                          "%s%s", inputName, (i < game->bufferCount - 1) ? "-" : "");
+    bufferPos +=
+        snprintf(bufferText + bufferPos, sizeof(bufferText) - bufferPos, "%s%s",
+                 inputName, (i < game->bufferCount - 1) ? "-" : "");
   }
   snprintf(text, sizeof(text), "[%s]", bufferText);
   DrawString(screen, 16, DEBUG_MENU_START + 32, text, charset);
@@ -421,12 +433,14 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
   snprintf(text, sizeof(text), "BEAT 'EM UP GAME");
   DrawString(screen, screen->w / 2 - strlen(text) * 12 / 2, 12, text, charset);
 
-  snprintf(text, sizeof(text), "time: %.1lf s | position: (%.0lf, %.0lf) | fps: %.0lf",
+  snprintf(text, sizeof(text),
+           "time: %.1lf s | position: (%.0lf, %.0lf) | fps: %.0lf",
            game->worldTime, game->playerX, SCREEN_HEIGHT - game->playerY, fps);
   DrawString(screen, 16, 26, text, charset);
 
-  snprintf(text, sizeof(text), "exit [ESC] | new game [N] | move [WSAD] | crouch [R] | heavy "
-                 "attack [F] | debug menu [B]");
+  snprintf(text, sizeof(text),
+           "exit [ESC] | new game [N] | move [WSAD] | crouch [R] | heavy "
+           "attack [F] | debug menu [B]");
   DrawString(screen, 16, 40, text, charset);
 
   if (game->debugMenuEnabled) {
@@ -521,102 +535,6 @@ void UpdateCamera(GameState *game, double delta) {
   game->cameraX += cameraDiff * CAMERA_SMOOTH_FACTOR * delta;
 }
 
-struct SDLResources {
-  SDL_Window *window;
-  SDL_Renderer *renderer;
-  SDL_Surface *screen;
-  SDL_Texture *screenTexture;
-  SDL_Surface *charset;
-  SDL_Surface *spritemap;
-  SDL_Surface *cloudTexture;
-  SDL_Surface *floorTexture;
-};
-
-void CleanupSDL(SDLResources *res) {
-  if (res->charset)
-    SDL_FreeSurface(res->charset);
-  if (res->spritemap)
-    SDL_FreeSurface(res->spritemap);
-  if (res->cloudTexture)
-    SDL_FreeSurface(res->cloudTexture);
-  if (res->floorTexture)
-    SDL_FreeSurface(res->floorTexture);
-  if (res->screen)
-    SDL_FreeSurface(res->screen);
-  if (res->screenTexture)
-    SDL_DestroyTexture(res->screenTexture);
-  if (res->renderer)
-    SDL_DestroyRenderer(res->renderer);
-  if (res->window)
-    SDL_DestroyWindow(res->window);
-  SDL_Quit();
-}
-
-bool InitializeSDL(SDLResources *res) {
-  memset(res, 0, sizeof(SDLResources));
-
-  if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
-    printf("SDL_Init error: %s\n", SDL_GetError());
-    return false;
-  }
-
-  int rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0,
-                                        &res->window, &res->renderer);
-  if (rc != 0) {
-    printf("SDL_CreateWindowAndRenderer error: %s\n", SDL_GetError());
-    SDL_Quit();
-    return false;
-  }
-
-  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-  SDL_RenderSetLogicalSize(res->renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
-  SDL_SetRenderDrawColor(res->renderer, 0, 0, 0, 255);
-  SDL_SetWindowTitle(res->window, "Beat 'em Up Game");
-
-  res->screen =
-      SDL_CreateRGBSurface(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0x00FF0000,
-                          0x0000FF00, 0x000000FF, 0xFF000000);
-
-  res->screenTexture = SDL_CreateTexture(
-      res->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-      SCREEN_WIDTH, SCREEN_HEIGHT);
-
-  SDL_ShowCursor(SDL_DISABLE);
-  return true;
-}
-
-bool LoadResources(SDLResources *res) {
-  res->charset = SDL_LoadBMP("./vcr_osd_mono.bmp");
-  if (res->charset == NULL) {
-    printf("SDL_LoadBMP(vcr_osd_mono.bmp) error: %s\n", SDL_GetError());
-    return false;
-  }
-  SDL_SetColorKey(res->charset, true, 0x000000);
-
-  res->spritemap = SDL_LoadBMP("./player_sprite.bmp");
-  if (res->spritemap == NULL) {
-    printf("SDL_LoadBMP(player_sprite.bmp) error: %s\n", SDL_GetError());
-    return false;
-  }
-  SDL_SetColorKey(res->spritemap, true, 0x000000);
-
-  res->cloudTexture = SDL_LoadBMP("./texture_clouds.bmp");
-  if (res->cloudTexture == NULL) {
-    printf("Warning: SDL_LoadBMP(texture_clouds.bmp) error: %s\n",
-           SDL_GetError());
-    printf("Continuing without cloud texture...\n");
-  }
-
-  res->floorTexture = SDL_LoadBMP("./texture_floor.bmp");
-  if (res->floorTexture == NULL) {
-    printf("Warning: SDL_LoadBMP(texture_floor.bmp) error: %s\n",
-           SDL_GetError());
-    printf("Continuing without floor texture...\n");
-  }
-
-  return true;
-}
-
 void HandleEvents(GameState *game, int *quit) {
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
@@ -687,16 +605,103 @@ void HandleEvents(GameState *game, int *quit) {
   }
 }
 
-void RenderFrame(SDLResources *res, GameState *game, double fps, Uint32 black) {
+void RenderFrame(SDLResources *res, GameState *game, double fps) {
+  Uint32 black = SDL_MapRGB(res->screen->format, 0x00, 0x00, 0x00);
+
   SDL_FillRect(res->screen, NULL, black);
+
   DrawStage(res->screen, game->cameraX, res->cloudTexture, res->floorTexture,
             game);
   DrawPlayer(res->screen, res->spritemap, game);
   DrawHUD(res->screen, res->charset, game, fps, black, black);
+
   SDL_UpdateTexture(res->screenTexture, NULL, res->screen->pixels,
                     res->screen->pitch);
   SDL_RenderCopy(res->renderer, res->screenTexture, NULL, NULL);
   SDL_RenderPresent(res->renderer);
+}
+
+void CleanupSDL(SDLResources *res) {
+  if (res->charset)
+    SDL_FreeSurface(res->charset);
+  if (res->spritemap)
+    SDL_FreeSurface(res->spritemap);
+  if (res->cloudTexture)
+    SDL_FreeSurface(res->cloudTexture);
+  if (res->floorTexture)
+    SDL_FreeSurface(res->floorTexture);
+  if (res->screen)
+    SDL_FreeSurface(res->screen);
+  if (res->screenTexture)
+    SDL_DestroyTexture(res->screenTexture);
+  if (res->renderer)
+    SDL_DestroyRenderer(res->renderer);
+  if (res->window)
+    SDL_DestroyWindow(res->window);
+  SDL_Quit();
+}
+
+bool InitializeSDL(SDLResources *res) {
+  memset(res, 0, sizeof(SDLResources));
+
+  if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
+    printf("SDL_Init error: %s\n", SDL_GetError());
+    return false;
+  }
+
+  int rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0,
+                                       &res->window, &res->renderer);
+  if (rc != 0) {
+    printf("SDL_CreateWindowAndRenderer error: %s\n", SDL_GetError());
+    SDL_Quit();
+    return false;
+  }
+
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+  SDL_RenderSetLogicalSize(res->renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+  SDL_SetRenderDrawColor(res->renderer, 0, 0, 0, 255);
+  SDL_SetWindowTitle(res->window, "Beat 'em Up Game");
+
+  res->screen =
+      SDL_CreateRGBSurface(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0x00FF0000,
+                           0x0000FF00, 0x000000FF, 0xFF000000);
+
+  res->screenTexture = SDL_CreateTexture(
+      res->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+      SCREEN_WIDTH, SCREEN_HEIGHT);
+
+  SDL_ShowCursor(SDL_DISABLE);
+  return true;
+}
+
+bool LoadResources(SDLResources *res) {
+  res->charset = SDL_LoadBMP("./vcr_osd_mono.bmp");
+  if (res->charset == NULL) {
+    printf("SDL_LoadBMP(vcr_osd_mono.bmp) error: %s\n", SDL_GetError());
+    return false;
+  }
+  SDL_SetColorKey(res->charset, true, 0x000000);
+
+  res->spritemap = SDL_LoadBMP("./player_sprite.bmp");
+  if (res->spritemap == NULL) {
+    printf("SDL_LoadBMP(player_sprite.bmp) error: %s\n", SDL_GetError());
+    return false;
+  }
+  SDL_SetColorKey(res->spritemap, true, 0x000000);
+
+  res->cloudTexture = SDL_LoadBMP("./texture_clouds.bmp");
+  if (res->cloudTexture == NULL) {
+    printf("SDL_LoadBMP(texture_clouds.bmp) error: %s\n", SDL_GetError());
+    return false;
+  }
+
+  res->floorTexture = SDL_LoadBMP("./texture_floor.bmp");
+  if (res->floorTexture == NULL) {
+    printf("SDL_LoadBMP(texture_floor.bmp) error: %s\n", SDL_GetError());
+    return false;
+  }
+
+  return true;
 }
 
 int main(int argc, char **argv) {
@@ -714,7 +719,6 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  Uint32 black = SDL_MapRGB(res.screen->format, 0x00, 0x00, 0x00);
   InitGame(&game);
 
   int timeLast = SDL_GetTicks();
@@ -740,7 +744,7 @@ int main(int argc, char **argv) {
       fpsTimer -= 0.5;
     }
 
-    RenderFrame(&res, &game, fps, black);
+    RenderFrame(&res, &game, fps);
     HandleEvents(&game, &quit);
     frames++;
   }
