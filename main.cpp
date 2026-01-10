@@ -150,14 +150,14 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
   dest.h = SPRITE_HEIGHT;
 
   // sprites in first row:
-  // standing(0) | attack_crouch(1) | attack_fist_defense(2) |
+  // standing(0) | attack_crouch(1) | light_defense_attack(2) |
   // hand_long_attack(3) | stomach_attack(4) | stomach_attack_prepare(5) |
   // jump_forward(6) | jump_landing(7)
   int spriteIndex = 0;
   if (game->state == STATE_LIGHT_ATTACK) {
-    spriteIndex = 3; // hand_long_attack for light attack
+    spriteIndex = 2; // light_defense_attack for light attack
   } else if (game->state == STATE_HEAVY_ATTACK) {
-    spriteIndex = 4; // stomach_attack for heavy attack
+    spriteIndex = 3; // hand_long_attack for heavy attack
   } else {
     spriteIndex = 0; // standing idle
   }
@@ -182,7 +182,7 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
           game->worldTime, game->playerX, SCREEN_HEIGHT - game->playerY, fps);
   DrawString(screen, 16, 26, text, charset);
 
-  sprintf(text, "move [WSAD] | light attack [X] | heavy attack [Y]");
+  sprintf(text, "move [WSAD] | light attack [R] | heavy attack [F]");
   DrawString(screen, 16, 40, text, charset);
 
   sprintf(text, "exit [ESC] | new game [N]");
@@ -391,9 +391,9 @@ int main(int argc, char **argv) {
           game.moveUp = 1;
         else if (event.key.keysym.sym == SDLK_s)
           game.moveDown = 1;
-        else if (event.key.keysym.sym == SDLK_x)
+        else if (event.key.keysym.sym == SDLK_r)
           StartLightAttack(&game);
-        else if (event.key.keysym.sym == SDLK_y)
+        else if (event.key.keysym.sym == SDLK_f)
           StartHeavyAttack(&game);
         break;
       case SDL_KEYUP:
