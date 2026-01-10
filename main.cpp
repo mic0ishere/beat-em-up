@@ -336,6 +336,9 @@ void DrawStage(SDL_Surface *screen, double cameraX, SDL_Surface *cloudTexture,
         
         // Get the tile type from the persistent pattern
         int patternIndex = tileY * FLOOR_TILES_HORIZONTAL + tileX;
+        // Validate index to prevent array bounds violation
+        if (patternIndex >= FLOOR_TILES_VERTICAL * FLOOR_TILES_HORIZONTAL) continue;
+        
         int tileType = game->floorPattern[patternIndex];
         
         // Calculate source rectangle (which tile from texture to use)
