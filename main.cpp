@@ -1,5 +1,3 @@
-#define _USE_MATH_DEFINES
-#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -16,80 +14,65 @@ extern "C" {
 
 #define SCREEN_WIDTH 640
 #define SCREEN_HEIGHT 480
-
-// Game constants
-#define STAGE_WIDTH 2400 // Stage is wider than screen for scrolling
+#define STAGE_WIDTH 2400
 #define STAGE_HEIGHT 480
-#define FLOOR_Y 350        // Floor y-coordinate
-#define FLOOR_HEIGHT 130   // Height of the floor area
-#define PLAYER_SPEED 150.0 // Pixels per second
-#define CAMERA_GRACE 200   // Grace space before camera starts following
+#define FLOOR_Y 350
+#define FLOOR_HEIGHT 130
+#define PLAYER_SPEED 150.0
+#define CAMERA_SMOOTH_FACTOR 5.0
 
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
                 SDL_Surface *charset) {
-  int px, py, c;
-  SDL_Rect s, d;
-  s.w = 8;
-  s.h = 8;
-  d.w = 8;
-  d.h = 8;
+  SDL_Rect source, dest;
+  source.w = 8;
+  source.h = 8;
+  dest.w = 8;
+  dest.h = 8;
+  
   while (*text) {
-    c = *text & 255;
-    px = (c % 16) * 8;
-    py = (c / 16) * 8;
-    s.x = px;
-    s.y = py;
-    d.x = x;
-    d.y = y;
-    SDL_BlitSurface(charset, &s, screen, &d);
+    int character = *text & 255;
+    source.x = (character % 16) * 8;
+    source.y = (character / 16) * 8;
+    dest.x = x;
+    dest.y = y;
+    SDL_BlitSurface(charset, &source, screen, &dest);
     x += 8;
     text++;
-  };
-};
-
-void DrawSurface(SDL_Surface *screen, SDL_Surface *sprite, int x, int y) {
-  SDL_Rect dest;
-  dest.x = x - sprite->w / 2;
-  dest.y = y - sprite->h / 2;
-  dest.w = sprite->w;
-  dest.h = sprite->h;
-  SDL_BlitSurface(sprite, NULL, screen, &dest);
-};
+  }
+}
 
 void DrawPixel(SDL_Surface *surface, int x, int y, Uint32 color) {
-  int bpp = surface->format->BytesPerPixel;
-  Uint8 *p = (Uint8 *)surface->pixels + y * surface->pitch + x * bpp;
-  *(Uint32 *)p = color;
-};
-void DrawLine(SDL_Surface *screen, int x, int y, int l, int dx, int dy,
+  int bytesPerPixel = surface->format->BytesPerPixel;
+  Uint8 *pixel = (Uint8 *)surface->pixels + y * surface->pitch + x * bytesPerPixel;
+  *(Uint32 *)pixel = color;
+}
+void DrawLine(SDL_Surface *screen, int x, int y, int length, int dx, int dy,
               Uint32 color) {
-  for (int i = 0; i < l; i++) {
+  for (int i = 0; i < length; i++) {
     DrawPixel(screen, x, y, color);
     x += dx;
     y += dy;
-  };
-};
+  }
+}
 
-// rysowanie prostok�ta o d�ugo�ci bok�w l i k
-// draw a rectangle of size l by k
-void DrawRectangle(SDL_Surface *screen, int x, int y, int l, int k,
+void DrawRectangle(SDL_Surface *screen, int x, int y, int width, int height,
                    Uint32 outlineColor, Uint32 fillColor) {
-  int i;
-  DrawLine(screen, x, y, k, 0, 1, outlineColor);
-  DrawLine(screen, x + l - 1, y, k, 0, 1, outlineColor);
-  DrawLine(screen, x, y, l, 1, 0, outlineColor);
-  DrawLine(screen, x, y + k - 1, l, 1, 0, outlineColor);
-  for (i = y + 1; i < y + k - 1; i++)
-    DrawLine(screen, x + 1, i, l - 2, 1, 0, fillColor);
-};
+  DrawLine(screen, x, y, height, 0, 1, outlineColor);
+  DrawLine(screen, x + width - 1, y, height, 0, 1, outlineColor);
+  DrawLine(screen, x, y, width, 1, 0, outlineColor);
+  DrawLine(screen, x, y + height - 1, width, 1, 0, outlineColor);
+  
+  for (int i = y + 1; i < y + height - 1; i++) {
+    DrawLine(screen, x + 1, i, width - 2, 1, 0, fillColor);
+  }
+}
 
-// Game state structure
 struct GameState {
-  double playerX, playerY;                   // Player position
-  double cameraX;                            // Camera X position
-  double worldTime;                          // Elapsed game time
-  bool gameActive;                           // Is game in progress
-  int moveLeft, moveRight, moveUp, moveDown; // Movement flags
+  double playerX, playerY;
+  double cameraX;
+  double worldTime;
+  bool gameActive;
+  int moveLeft, moveRight, moveUp, moveDown;
 };
 
 void InitGame(GameState *game) {
@@ -104,221 +87,215 @@ void InitGame(GameState *game) {
   game->moveDown = 0;
 }
 
-// Draw the game stage (floor and background)
-void DrawStage(SDL_Surface *screen, double cameraX, int czarny, int zielony,
-               int szary, int brazowy) {
-  // Sky/background
-  for (int i = 0; i < FLOOR_Y; i++) {
-    int blue = 0x33 + (0x88 - 0x33) * i / FLOOR_Y;
-    int skyColor = SDL_MapRGB(screen->format, 0x66, 0x99, blue);
-    DrawLine(screen, 0, i, SCREEN_WIDTH, 1, 0, skyColor);
+void DrawSkyGradient(SDL_Surface *screen) {
+  for (int y = 0; y < FLOOR_Y; y++) {
+    int blue = 0x33 + (0x88 - 0x33) * y / FLOOR_Y;
+    Uint32 skyColor = SDL_MapRGB(screen->format, 0x66, 0x99, blue);
+    DrawLine(screen, 0, y, SCREEN_WIDTH, 1, 0, skyColor);
   }
+}
 
-  // Floor
-  for (int i = FLOOR_Y; i < SCREEN_HEIGHT; i++) {
-    DrawLine(screen, 0, i, SCREEN_WIDTH, 1, 0, brazowy);
+void DrawFloor(SDL_Surface *screen, Uint32 brown) {
+  for (int y = FLOOR_Y; y < SCREEN_HEIGHT; y++) {
+    DrawLine(screen, 0, y, SCREEN_WIDTH, 1, 0, brown);
   }
+}
 
-  // Draw floor grid lines for perspective
+void DrawFloorGrid(SDL_Surface *screen, double cameraX, Uint32 gray) {
   for (int x = 0; x < STAGE_WIDTH; x += 50) {
     int screenX = x - (int)cameraX;
     if (screenX >= -50 && screenX < SCREEN_WIDTH + 50) {
-      DrawLine(screen, screenX, FLOOR_Y, FLOOR_HEIGHT, 0, 1, szary);
+      DrawLine(screen, screenX, FLOOR_Y, FLOOR_HEIGHT, 0, 1, gray);
     }
-  }
-
-  // Stage boundaries - darker lines
-  int leftBound = 0 - (int)cameraX;
-  int rightBound = STAGE_WIDTH - (int)cameraX;
-  if (leftBound >= 0 && leftBound < SCREEN_WIDTH) {
-    DrawLine(screen, leftBound, FLOOR_Y, FLOOR_HEIGHT, 0, 1, czarny);
-    DrawLine(screen, leftBound + 1, FLOOR_Y, FLOOR_HEIGHT, 0, 1, czarny);
-  }
-  if (rightBound >= 0 && rightBound < SCREEN_WIDTH) {
-    DrawLine(screen, rightBound, FLOOR_Y, FLOOR_HEIGHT, 0, 1, czarny);
-    DrawLine(screen, rightBound - 1, FLOOR_Y, FLOOR_HEIGHT, 0, 1, czarny);
   }
 }
 
-// Draw the player character
+void DrawStageBoundaries(SDL_Surface *screen, double cameraX, Uint32 black) {
+  int leftBound = 0 - (int)cameraX;
+  int rightBound = STAGE_WIDTH - (int)cameraX;
+  
+  if (leftBound >= 0 && leftBound < SCREEN_WIDTH) {
+    DrawLine(screen, leftBound, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
+    DrawLine(screen, leftBound + 1, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
+  }
+  
+  if (rightBound >= 0 && rightBound < SCREEN_WIDTH) {
+    DrawLine(screen, rightBound, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
+    DrawLine(screen, rightBound - 1, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
+  }
+}
+
+void DrawStage(SDL_Surface *screen, double cameraX, Uint32 black, Uint32 gray,
+               Uint32 brown) {
+  DrawSkyGradient(screen);
+  DrawFloor(screen, brown);
+  DrawFloorGrid(screen, cameraX, gray);
+  DrawStageBoundaries(screen, cameraX, black);
+}
+
 void DrawPlayer(SDL_Surface *screen, double playerX, double playerY,
-                double cameraX, int czarny, int czerwony, int zielony) {
+                double cameraX, Uint32 black, Uint32 red, Uint32 green) {
   int screenX = (int)(playerX - cameraX);
   int screenY = (int)playerY;
 
-  // Simple character representation - can be replaced with sprite
-  // Body
-  DrawRectangle(screen, screenX - 10, screenY - 30, 20, 30, czarny, czerwony);
-  // Head
-  DrawRectangle(screen, screenX - 8, screenY - 45, 16, 15, czarny, zielony);
-  // Arms
-  DrawRectangle(screen, screenX - 15, screenY - 25, 5, 15, czarny, czerwony);
-  DrawRectangle(screen, screenX + 10, screenY - 25, 5, 15, czarny, czerwony);
-  // Legs
-  DrawRectangle(screen, screenX - 8, screenY, 6, 10, czarny, czerwony);
-  DrawRectangle(screen, screenX + 2, screenY, 6, 10, czarny, czerwony);
+  DrawRectangle(screen, screenX - 10, screenY - 30, 20, 30, black, red);
+  DrawRectangle(screen, screenX - 8, screenY - 45, 16, 15, black, green);
+  DrawRectangle(screen, screenX - 15, screenY - 25, 5, 15, black, red);
+  DrawRectangle(screen, screenX + 10, screenY - 25, 5, 15, black, red);
+  DrawRectangle(screen, screenX - 8, screenY, 6, 10, black, red);
+  DrawRectangle(screen, screenX + 2, screenY, 6, 10, black, red);
 }
 
-// Draw HUD with game information
 void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
-             double fps, int czerwony, int niebieski, int czarny) {
+             double fps, Uint32 red, Uint32 blue) {
   char text[128];
 
-  // HUD background
-  DrawRectangle(screen, 4, 4, SCREEN_WIDTH - 8, 56, czerwony, niebieski);
+  DrawRectangle(screen, 4, 4, SCREEN_WIDTH - 8, 56, red, blue);
 
-  // Title
   sprintf(text, "Beat 'em Up Game");
   DrawString(screen, screen->w / 2 - strlen(text) * 8 / 2, 10, text, charset);
 
-  // Time and position info
-  sprintf(text, "Time: %.1lf s | Position: %.0lf | FPS: %.0lf", game->worldTime,
-          game->playerX, fps);
+  sprintf(text, "Time: %.1lf s | Position: (%.0lf, %.0lf) | FPS: %.0lf",
+          game->worldTime, game->playerX, game->playerY, fps);
   DrawString(screen, 12, 26, text, charset);
 
-  // Controls
-  sprintf(text, "ESC-exit | N-new game | Arrows-move");
+  sprintf(text, "ESC-exit | N-new game | WSAD-move");
   DrawString(screen, 12, 42, text, charset);
 }
 
-// main
+void UpdatePlayerPosition(GameState *game, double delta) {
+  double dx = 0, dy = 0;
+  
+  if (game->moveLeft)
+    dx -= PLAYER_SPEED * delta;
+  if (game->moveRight)
+    dx += PLAYER_SPEED * delta;
+  if (game->moveUp)
+    dy -= PLAYER_SPEED * delta;
+  if (game->moveDown)
+    dy += PLAYER_SPEED * delta;
+
+  game->playerX += dx;
+  game->playerY += dy;
+
+  if (game->playerX < 20)
+    game->playerX = 20;
+  if (game->playerX > STAGE_WIDTH - 20)
+    game->playerX = STAGE_WIDTH - 20;
+  if (game->playerY < FLOOR_Y)
+    game->playerY = FLOOR_Y;
+  if (game->playerY > SCREEN_HEIGHT - 20)
+    game->playerY = SCREEN_HEIGHT - 20;
+}
+
+void UpdateCamera(GameState *game, double delta) {
+  double targetCameraX = game->playerX - SCREEN_WIDTH / 2;
+  
+  if (targetCameraX < 0)
+    targetCameraX = 0;
+  if (targetCameraX > STAGE_WIDTH - SCREEN_WIDTH)
+    targetCameraX = STAGE_WIDTH - SCREEN_WIDTH;
+
+  double cameraDiff = targetCameraX - game->cameraX;
+  game->cameraX += cameraDiff * CAMERA_SMOOTH_FACTOR * delta;
+}
+
+void CleanupSDL(SDL_Surface *charset, SDL_Surface *screen, SDL_Texture *texture,
+                SDL_Renderer *renderer, SDL_Window *window) {
+  if (charset)
+    SDL_FreeSurface(charset);
+  SDL_FreeSurface(screen);
+  SDL_DestroyTexture(texture);
+  SDL_DestroyRenderer(renderer);
+  SDL_DestroyWindow(window);
+  SDL_Quit();
+}
+
 #ifdef __cplusplus
 extern "C"
 #endif
     int main(int argc, char **argv) {
-  int t1, t2, quit, frames, rc;
-  double delta, fpsTimer, fps;
   SDL_Event event;
   SDL_Surface *screen, *charset;
-  SDL_Texture *scrtex;
+  SDL_Texture *screenTexture;
   SDL_Window *window;
   SDL_Renderer *renderer;
   GameState game;
+  
+  int timeNow, timeLast, quit, frames;
+  double delta, fpsTimer, fps;
 
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
     printf("SDL_Init error: %s\n", SDL_GetError());
     return 1;
   }
 
-  rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0, &window,
-                                   &renderer);
+  int rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0, &window,
+                                        &renderer);
   if (rc != 0) {
     SDL_Quit();
     printf("SDL_CreateWindowAndRenderer error: %s\n", SDL_GetError());
     return 1;
-  };
+  }
 
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
   SDL_RenderSetLogicalSize(renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-
   SDL_SetWindowTitle(window, "Beat 'em Up Game");
 
   screen = SDL_CreateRGBSurface(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0x00FF0000,
                                 0x0000FF00, 0x000000FF, 0xFF000000);
 
-  scrtex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-                             SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH,
-                             SCREEN_HEIGHT);
+  screenTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                    SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH,
+                                    SCREEN_HEIGHT);
 
-  // wy��czenie widoczno�ci kursora myszy
   SDL_ShowCursor(SDL_DISABLE);
 
   charset = SDL_LoadBMP("./cs8x8.bmp");
   if (charset == NULL) {
     printf("SDL_LoadBMP(cs8x8.bmp) error: %s\n", SDL_GetError());
-    SDL_FreeSurface(screen);
-    SDL_DestroyTexture(scrtex);
-    SDL_DestroyWindow(window);
-    SDL_DestroyRenderer(renderer);
-    SDL_Quit();
+    CleanupSDL(NULL, screen, screenTexture, renderer, window);
     return 1;
-  };
+  }
   SDL_SetColorKey(charset, true, 0x000000);
 
-  char text[128];
-  int czarny = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
-  int zielony = SDL_MapRGB(screen->format, 0x00, 0xFF, 0x00);
-  int czerwony = SDL_MapRGB(screen->format, 0xFF, 0x00, 0x00);
-  int niebieski = SDL_MapRGB(screen->format, 0x11, 0x11, 0xCC);
-  int szary = SDL_MapRGB(screen->format, 0x80, 0x80, 0x80);
-  int brazowy = SDL_MapRGB(screen->format, 0x8B, 0x4F, 0x2A);
+  Uint32 black = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
+  Uint32 green = SDL_MapRGB(screen->format, 0x00, 0xFF, 0x00);
+  Uint32 red = SDL_MapRGB(screen->format, 0xFF, 0x00, 0x00);
+  Uint32 blue = SDL_MapRGB(screen->format, 0x11, 0x11, 0xCC);
+  Uint32 gray = SDL_MapRGB(screen->format, 0x80, 0x80, 0x80);
+  Uint32 brown = SDL_MapRGB(screen->format, 0x8B, 0x4F, 0x2A);
 
-  // Initialize game
   InitGame(&game);
 
-  t1 = SDL_GetTicks();
-
+  timeLast = SDL_GetTicks();
   frames = 0;
   fpsTimer = 0;
   fps = 0;
   quit = 0;
 
   while (!quit) {
-    t2 = SDL_GetTicks();
-
-    // w tym momencie t2-t1 to czas w milisekundach,
-    // jaki uplyna� od ostatniego narysowania ekranu
-    // delta to ten sam czas w sekundach
-    // here t2-t1 is the time in milliseconds since
-    // the last screen was drawn
-    // delta is the same time in seconds
-    delta = (t2 - t1) * 0.001;
-    t1 = t2;
+    timeNow = SDL_GetTicks();
+    delta = (timeNow - timeLast) * 0.001;
+    timeLast = timeNow;
 
     if (game.gameActive) {
       game.worldTime += delta;
-
-      // Update player position based on input
-      double dx = 0, dy = 0;
-      if (game.moveLeft)
-        dx -= PLAYER_SPEED * delta;
-      if (game.moveRight)
-        dx += PLAYER_SPEED * delta;
-      if (game.moveUp)
-        dy -= PLAYER_SPEED * delta;
-      if (game.moveDown)
-        dy += PLAYER_SPEED * delta;
-
-      // Update player position with stage boundaries
-      game.playerX += dx;
-      game.playerY += dy;
-
-      // Clamp player to stage boundaries
-      if (game.playerX < 20)
-        game.playerX = 20;
-      if (game.playerX > STAGE_WIDTH - 20)
-        game.playerX = STAGE_WIDTH - 20;
-
-      // Clamp player to floor area
-      if (game.playerY < FLOOR_Y)
-        game.playerY = FLOOR_Y;
-      if (game.playerY > SCREEN_HEIGHT - 20)
-        game.playerY = SCREEN_HEIGHT - 20;
-
-      // Update camera to follow player with grace space
-      double targetCameraX = game.playerX - SCREEN_WIDTH / 2;
-      if (targetCameraX < 0)
-        targetCameraX = 0;
-      if (targetCameraX > STAGE_WIDTH - SCREEN_WIDTH)
-        targetCameraX = STAGE_WIDTH - SCREEN_WIDTH;
-
-      // Smooth camera movement
-      double cameraDiff = targetCameraX - game.cameraX;
-      game.cameraX += cameraDiff * 5.0 * delta; // Smooth follow
+      UpdatePlayerPosition(&game, delta);
+      UpdateCamera(&game, delta);
     }
 
-    // Clear screen and draw game
-    SDL_FillRect(screen, NULL, czarny);
+    SDL_FillRect(screen, NULL, black);
 
     if (game.gameActive) {
-      DrawStage(screen, game.cameraX, czarny, zielony, szary, brazowy);
-      DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, czarny,
-                 czerwony, zielony);
+      DrawStage(screen, game.cameraX, black, gray, brown);
+      DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, black, red,
+                 green);
     } else {
-      // Game over or not started screen
+      char text[128];
       DrawRectangle(screen, SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50, 300,
-                    100, czerwony, niebieski);
+                    100, red, blue);
       sprintf(text, "Press 'N' to start");
       DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 8 / 2,
                  SCREEN_HEIGHT / 2 - 10, text, charset);
@@ -332,59 +309,48 @@ extern "C"
       fps = frames * 2;
       frames = 0;
       fpsTimer -= 0.5;
-    };
+    }
 
-    // Draw HUD
-    DrawHUD(screen, charset, &game, fps, czerwony, niebieski, czarny);
+    DrawHUD(screen, charset, &game, fps, red, blue);
 
-    SDL_UpdateTexture(scrtex, NULL, screen->pixels, screen->pitch);
-    //		SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, scrtex, NULL, NULL);
+    SDL_UpdateTexture(screenTexture, NULL, screen->pixels, screen->pitch);
+    SDL_RenderCopy(renderer, screenTexture, NULL, NULL);
     SDL_RenderPresent(renderer);
 
-    // obs�uga zdarze� (o ile jakie� zasz�y) / handling of events (if there were
-    // any)
     while (SDL_PollEvent(&event)) {
       switch (event.type) {
       case SDL_KEYDOWN:
         if (event.key.keysym.sym == SDLK_ESCAPE)
           quit = 1;
-        else if (event.key.keysym.sym == SDLK_n ||
-                 event.key.keysym.sym == SDLK_n)
+        else if (event.key.keysym.sym == SDLK_n)
           InitGame(&game);
-        else if (event.key.keysym.sym == SDLK_LEFT)
+        else if (event.key.keysym.sym == SDLK_a)
           game.moveLeft = 1;
-        else if (event.key.keysym.sym == SDLK_RIGHT)
+        else if (event.key.keysym.sym == SDLK_d)
           game.moveRight = 1;
-        else if (event.key.keysym.sym == SDLK_UP)
+        else if (event.key.keysym.sym == SDLK_w)
           game.moveUp = 1;
-        else if (event.key.keysym.sym == SDLK_DOWN)
+        else if (event.key.keysym.sym == SDLK_s)
           game.moveDown = 1;
         break;
       case SDL_KEYUP:
-        if (event.key.keysym.sym == SDLK_LEFT)
+        if (event.key.keysym.sym == SDLK_a)
           game.moveLeft = 0;
-        else if (event.key.keysym.sym == SDLK_RIGHT)
+        else if (event.key.keysym.sym == SDLK_d)
           game.moveRight = 0;
-        else if (event.key.keysym.sym == SDLK_UP)
+        else if (event.key.keysym.sym == SDLK_w)
           game.moveUp = 0;
-        else if (event.key.keysym.sym == SDLK_DOWN)
+        else if (event.key.keysym.sym == SDLK_s)
           game.moveDown = 0;
         break;
       case SDL_QUIT:
         quit = 1;
         break;
-      };
-    };
+      }
+    }
     frames++;
-  };
+  }
 
-  SDL_FreeSurface(charset);
-  SDL_FreeSurface(screen);
-  SDL_DestroyTexture(scrtex);
-  SDL_DestroyRenderer(renderer);
-  SDL_DestroyWindow(window);
-
-  SDL_Quit();
+  CleanupSDL(charset, screen, screenTexture, renderer, window);
   return 0;
-};
+}
