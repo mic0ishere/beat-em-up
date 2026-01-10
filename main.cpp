@@ -379,7 +379,11 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
   SDL_BlitScaled(spritemap, &source, screen, &dest);
 }
 
-void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game) {
+void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
+                   Uint32 outlineColor, Uint32 fillColor) {
+  DrawRectangle(screen, 8, DEBUG_MENU_START, SCREEN_WIDTH - 16, 48,
+                outlineColor, fillColor);
+
   char text[128];
   snprintf(text, sizeof(text), "DEBUG MENU - Current Action: %s",
            game->currentActionName);
@@ -438,12 +442,6 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
            "exit [ESC] | new game [N] | move [WSAD] | crouch [R] | heavy "
            "attack [F] | debug menu [B]");
   DrawString(screen, 16, 40, text, charset);
-
-  if (game->debugMenuEnabled) {
-    DrawRectangle(screen, 8, DEBUG_MENU_START, SCREEN_WIDTH - 16, 48,
-                  outlineColor, fillColor);
-    DrawDebugMenu(screen, charset, game);
-  }
 }
 
 void UpdatePlayerPosition(GameState *game, double delta) {
@@ -534,12 +532,21 @@ void UpdateCamera(GameState *game, double delta) {
 void HandleMovementKeyDown(GameState *game, SDL_Keycode key, bool repeat) {
   int keyIndex = -1;
   int *moveFlag = NULL;
-  
-  if (key == SDLK_a) { keyIndex = 1; moveFlag = &game->moveLeft; }
-  else if (key == SDLK_d) { keyIndex = 3; moveFlag = &game->moveRight; }
-  else if (key == SDLK_w) { keyIndex = 0; moveFlag = &game->moveUp; }
-  else if (key == SDLK_s) { keyIndex = 2; moveFlag = &game->moveDown; }
-  
+
+  if (key == SDLK_a) {
+    keyIndex = 1;
+    moveFlag = &game->moveLeft;
+  } else if (key == SDLK_d) {
+    keyIndex = 3;
+    moveFlag = &game->moveRight;
+  } else if (key == SDLK_w) {
+    keyIndex = 0;
+    moveFlag = &game->moveUp;
+  } else if (key == SDLK_s) {
+    keyIndex = 2;
+    moveFlag = &game->moveDown;
+  }
+
   if (moveFlag) {
     if (!repeat) {
       game->keyPressTime[keyIndex] = game->worldTime;
@@ -552,12 +559,25 @@ void HandleMovementKeyUp(GameState *game, SDL_Keycode key) {
   int keyIndex = -1;
   int *moveFlag = NULL;
   InputType inputType = INPUT_NONE;
-  
-  if (key == SDLK_a) { keyIndex = 1; moveFlag = &game->moveLeft; inputType = INPUT_LEFT; }
-  else if (key == SDLK_d) { keyIndex = 3; moveFlag = &game->moveRight; inputType = INPUT_RIGHT; }
-  else if (key == SDLK_w) { keyIndex = 0; moveFlag = &game->moveUp; inputType = INPUT_UP; }
-  else if (key == SDLK_s) { keyIndex = 2; moveFlag = &game->moveDown; inputType = INPUT_DOWN; }
-  
+
+  if (key == SDLK_a) {
+    keyIndex = 1;
+    moveFlag = &game->moveLeft;
+    inputType = INPUT_LEFT;
+  } else if (key == SDLK_d) {
+    keyIndex = 3;
+    moveFlag = &game->moveRight;
+    inputType = INPUT_RIGHT;
+  } else if (key == SDLK_w) {
+    keyIndex = 0;
+    moveFlag = &game->moveUp;
+    inputType = INPUT_UP;
+  } else if (key == SDLK_s) {
+    keyIndex = 2;
+    moveFlag = &game->moveDown;
+    inputType = INPUT_DOWN;
+  }
+
   if (moveFlag) {
     *moveFlag = 0;
     if (game->worldTime - game->keyPressTime[keyIndex] < DASH_TAP_THRESHOLD) {
@@ -604,6 +624,10 @@ void RenderFrame(SDLResources *res, GameState *game, double fps) {
             game);
   DrawPlayer(res->screen, res->spritemap, game);
   DrawHUD(res->screen, res->charset, game, fps, black, black);
+
+  if (game->debugMenuEnabled) {
+    DrawDebugMenu(res->screen, res->charset, game, black, black);
+  }
 
   SDL_UpdateTexture(res->screenTexture, NULL, res->screen->pixels,
                     res->screen->pitch);
