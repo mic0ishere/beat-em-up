@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <time.h>
 
 extern "C" {
 #if defined(__aarch64__) || defined(_M_ARM64)
@@ -18,6 +20,16 @@ extern "C" {
 #define FLOOR_HEIGHT 200
 #define PLAYER_SPEED 150.0
 #define CAMERA_SMOOTH_FACTOR 5.0
+
+#define CLOUD_TEXTURE_WIDTH 256
+#define CLOUD_TEXTURE_HEIGHT 144
+#define FLOOR_TILE_SIZE 48
+#define FLOOR_TILES_HORIZONTAL ((STAGE_WIDTH / FLOOR_TILE_SIZE) + 2)
+#define FLOOR_TILES_VERTICAL ((FLOOR_HEIGHT / FLOOR_TILE_SIZE) + 1)
+
+// Depth scaling parameters
+#define DEPTH_SCALE_MIN 0.7  // minimum scale (at bottom of screen)
+#define DEPTH_SCALE_MAX 1.0  // maximum scale (at top of play area)
 
 #define FONT_SIZE 10
 #define FONT_SRC_WIDTH 20
@@ -92,6 +104,9 @@ struct GameState {
 
   // Track key press times for tap detection
   double keyPressTime[4]; // W, A, S, D (up, left, down, right)
+  
+  // Floor tile pattern - stores which tile (0 or 1) to use at each position
+  int floorPattern[FLOOR_TILES_VERTICAL * FLOOR_TILES_HORIZONTAL];
 };
 
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
@@ -166,6 +181,11 @@ void InitGame(GameState *game) {
   // Initialize key press times
   for (int i = 0; i < 4; i++) {
     game->keyPressTime[i] = 0;
+  }
+  
+  // Initialize floor pattern with random tiles
+  for (int i = 0; i < FLOOR_TILES_VERTICAL * FLOOR_TILES_HORIZONTAL; i++) {
+    game->floorPattern[i] = rand() % 2;  // randomly choose tile 0 or 1
   }
 }
 
@@ -277,21 +297,92 @@ void DrawFloor(SDL_Surface *screen, Uint32 brown) {
   }
 }
 
-void DrawStage(SDL_Surface *screen, double cameraX, Uint32 black,
-               Uint32 brown) {
-  DrawSkyGradient(screen);
-  DrawFloor(screen, brown);
+void DrawStage(SDL_Surface *screen, double cameraX, SDL_Surface *cloudTexture, 
+               SDL_Surface *floorTexture, GameState *game) {
+  // Draw repeating cloud background
+  if (cloudTexture != NULL) {
+    int skyHeight = SCREEN_HEIGHT - FLOOR_HEIGHT;
+    
+    // Calculate horizontal offset for parallax effect (clouds move slower than camera)
+    int cloudOffsetX = (int)(cameraX * 0.3) % CLOUD_TEXTURE_WIDTH;
+    
+    // Draw clouds repeatedly across the sky
+    for (int x = -cloudOffsetX; x < SCREEN_WIDTH; x += CLOUD_TEXTURE_WIDTH) {
+      for (int y = 0; y < skyHeight; y += CLOUD_TEXTURE_HEIGHT) {
+        SDL_Rect dest;
+        dest.x = x;
+        dest.y = y;
+        dest.w = CLOUD_TEXTURE_WIDTH;
+        dest.h = CLOUD_TEXTURE_HEIGHT;
+        SDL_BlitSurface(cloudTexture, NULL, screen, &dest);
+      }
+    }
+  } else {
+    // Fallback to gradient if texture not loaded
+    DrawSkyGradient(screen);
+  }
+  
+  // Draw floor with tiled texture
+  if (floorTexture != NULL) {
+    int floorStartY = SCREEN_HEIGHT - FLOOR_HEIGHT;
+    
+    // Calculate which tiles are visible
+    int startTileX = (int)(cameraX / FLOOR_TILE_SIZE);
+    int endTileX = startTileX + (SCREEN_WIDTH / FLOOR_TILE_SIZE) + 2;
+    
+    for (int tileY = 0; tileY < FLOOR_TILES_VERTICAL; tileY++) {
+      for (int tileX = startTileX; tileX < endTileX && tileX < FLOOR_TILES_HORIZONTAL; tileX++) {
+        if (tileX < 0) continue;
+        
+        // Get the tile type from the persistent pattern
+        int patternIndex = tileY * FLOOR_TILES_HORIZONTAL + tileX;
+        int tileType = game->floorPattern[patternIndex];
+        
+        // Calculate source rectangle (which tile from texture to use)
+        SDL_Rect source;
+        source.x = tileType * FLOOR_TILE_SIZE;  // tile 0 or tile 1
+        source.y = 0;
+        source.w = FLOOR_TILE_SIZE;
+        source.h = FLOOR_TILE_SIZE;
+        
+        // Calculate destination on screen
+        SDL_Rect dest;
+        dest.x = (int)(tileX * FLOOR_TILE_SIZE - cameraX);
+        dest.y = floorStartY + tileY * FLOOR_TILE_SIZE;
+        dest.w = FLOOR_TILE_SIZE;
+        dest.h = FLOOR_TILE_SIZE;
+        
+        SDL_BlitSurface(floorTexture, &source, screen, &dest);
+      }
+    }
+  } else {
+    // Fallback to solid color if texture not loaded
+    Uint32 brown = SDL_MapRGB(screen->format, 0x8B, 0x4F, 0x2A);
+    DrawFloor(screen, brown);
+  }
 }
 
 void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
   int screenX = (int)(game->playerX - game->cameraX);
   int screenY = (int)game->playerY;
 
+  // Calculate depth scale based on Y position
+  // Y ranges from (SCREEN_HEIGHT - FLOOR_HEIGHT + 5) at top to SCREEN_HEIGHT at bottom
+  double playAreaTop = SCREEN_HEIGHT - FLOOR_HEIGHT + 5;
+  double playAreaBottom = SCREEN_HEIGHT;
+  double normalizedY = (game->playerY - playAreaTop) / (playAreaBottom - playAreaTop);
+  normalizedY = (normalizedY < 0) ? 0 : (normalizedY > 1) ? 1 : normalizedY;
+  
+  // Scale from DEPTH_SCALE_MAX at top to DEPTH_SCALE_MIN at bottom
+  double depthScale = DEPTH_SCALE_MAX - (DEPTH_SCALE_MAX - DEPTH_SCALE_MIN) * normalizedY;
+  
   SDL_Rect source, dest;
   source.w = SPRITE_SRC_WIDTH;
   source.h = SPRITE_SRC_HEIGHT;
-  dest.w = SPRITE_WIDTH;
-  dest.h = SPRITE_HEIGHT;
+  
+  // Apply depth scaling to sprite dimensions
+  dest.w = (int)(SPRITE_WIDTH * depthScale);
+  dest.h = (int)(SPRITE_HEIGHT * depthScale);
 
   // sprites in first row:
   // standing(0) | crouch_defense(1) | light_defense_attack(2) |
@@ -320,7 +411,7 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
   source.x = spriteIndex * SPRITE_SRC_WIDTH;
   source.y = spriteRow * SPRITE_SRC_HEIGHT;
   dest.x = screenX;
-  dest.y = screenY - SPRITE_HEIGHT;
+  dest.y = screenY - dest.h;  // Use scaled height
   SDL_BlitScaled(spritemap, &source, screen, &dest);
 }
 
@@ -471,12 +562,17 @@ void UpdateCamera(GameState *game, double delta) {
 }
 
 void CleanupSDL(SDL_Surface *charset, SDL_Surface *spritemap,
+                SDL_Surface *cloudTexture, SDL_Surface *floorTexture,
                 SDL_Surface *screen, SDL_Texture *texture,
                 SDL_Renderer *renderer, SDL_Window *window) {
   if (charset)
     SDL_FreeSurface(charset);
   if (spritemap)
     SDL_FreeSurface(spritemap);
+  if (cloudTexture)
+    SDL_FreeSurface(cloudTexture);
+  if (floorTexture)
+    SDL_FreeSurface(floorTexture);
   SDL_FreeSurface(screen);
   SDL_DestroyTexture(texture);
   SDL_DestroyRenderer(renderer);
@@ -486,7 +582,7 @@ void CleanupSDL(SDL_Surface *charset, SDL_Surface *spritemap,
 
 int main(int argc, char **argv) {
   SDL_Event event;
-  SDL_Surface *screen, *charset, *spritemap;
+  SDL_Surface *screen, *charset, *spritemap, *cloudTexture, *floorTexture;
   SDL_Texture *screenTexture;
   SDL_Window *window;
   SDL_Renderer *renderer;
@@ -496,6 +592,9 @@ int main(int argc, char **argv) {
     printf("SDL_Init error: %s\n", SDL_GetError());
     return 1;
   }
+  
+  // Initialize random seed for floor generation
+  srand(time(NULL));
 
   int rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0, &window,
                                        &renderer);
@@ -522,7 +621,7 @@ int main(int argc, char **argv) {
   charset = SDL_LoadBMP("./vcr_osd_mono.bmp");
   if (charset == NULL) {
     printf("SDL_LoadBMP(vcr_osd_mono.bmp) error: %s\n", SDL_GetError());
-    CleanupSDL(NULL, NULL, screen, screenTexture, renderer, window);
+    CleanupSDL(NULL, NULL, NULL, NULL, screen, screenTexture, renderer, window);
     return 1;
   }
   SDL_SetColorKey(charset, true, 0x000000);
@@ -530,10 +629,24 @@ int main(int argc, char **argv) {
   spritemap = SDL_LoadBMP("./player_sprite.bmp");
   if (spritemap == NULL) {
     printf("SDL_LoadBMP(player_sprite.bmp) error: %s\n", SDL_GetError());
-    CleanupSDL(charset, NULL, screen, screenTexture, renderer, window);
+    CleanupSDL(charset, NULL, NULL, NULL, screen, screenTexture, renderer, window);
     return 1;
   }
   SDL_SetColorKey(spritemap, true, 0x000000);
+  
+  // Load cloud texture
+  cloudTexture = SDL_LoadBMP("./texture_clouds.bmp");
+  if (cloudTexture == NULL) {
+    printf("Warning: SDL_LoadBMP(texture_clouds.bmp) error: %s\n", SDL_GetError());
+    printf("Continuing without cloud texture...\n");
+  }
+  
+  // Load floor texture
+  floorTexture = SDL_LoadBMP("./texture_floor.bmp");
+  if (floorTexture == NULL) {
+    printf("Warning: SDL_LoadBMP(texture_floor.bmp) error: %s\n", SDL_GetError());
+    printf("Continuing without floor texture...\n");
+  }
 
   Uint32 black = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
   Uint32 brown = SDL_MapRGB(screen->format, 0x8B, 0x4F, 0x2A);
@@ -559,7 +672,7 @@ int main(int argc, char **argv) {
 
     SDL_FillRect(screen, NULL, black);
 
-    DrawStage(screen, game.cameraX, black, brown);
+    DrawStage(screen, game.cameraX, cloudTexture, floorTexture, &game);
     DrawPlayer(screen, spritemap, &game);
 
     fpsTimer += delta;
@@ -645,6 +758,6 @@ int main(int argc, char **argv) {
     frames++;
   }
 
-  CleanupSDL(charset, spritemap, screen, screenTexture, renderer, window);
+  CleanupSDL(charset, spritemap, cloudTexture, floorTexture, screen, screenTexture, renderer, window);
   return 0;
 }
