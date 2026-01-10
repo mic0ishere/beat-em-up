@@ -26,8 +26,8 @@ void DrawString(SDL_Surface *screen, int x, int y, const char *text,
   SDL_Rect source, dest;
   source.w = 24;
   source.h = 24;
-  dest.w = 24;
-  dest.h = 24;
+  dest.w = 12;
+  dest.h = 12;
   
   while (*text) {
     int character = *text & 255;
@@ -40,7 +40,7 @@ void DrawString(SDL_Surface *screen, int x, int y, const char *text,
       dest.y = y;
       SDL_BlitSurface(charset, &source, screen, &dest);
     }
-    x += 24;
+    x += 12;
     text++;
   }
 }
@@ -154,17 +154,17 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
              double fps, Uint32 red, Uint32 blue) {
   char text[128];
 
-  DrawRectangle(screen, 4, 4, SCREEN_WIDTH - 8, 80, red, blue);
+  DrawRectangle(screen, 4, 4, SCREEN_WIDTH - 8, 50, red, blue);
 
   sprintf(text, "Beat 'em Up Game");
-  DrawString(screen, screen->w / 2 - strlen(text) * 24 / 2, 10, text, charset);
+  DrawString(screen, screen->w / 2 - strlen(text) * 12 / 2, 8, text, charset);
 
   sprintf(text, "Time: %.1lf s | Position: (%.0lf, %.0lf) | FPS: %.0lf",
-          game->worldTime, game->playerX, game->playerY, fps);
-  DrawString(screen, 12, 36, text, charset);
+          game->worldTime, game->playerX, game->playerY - FLOOR_Y, fps);
+  DrawString(screen, 12, 22, text, charset);
 
   sprintf(text, "ESC-exit | N-new game | WSAD-move");
-  DrawString(screen, 12, 60, text, charset);
+  DrawString(screen, 12, 36, text, charset);
 }
 
 void UpdatePlayerPosition(GameState *game, double delta) {
@@ -301,11 +301,11 @@ extern "C"
       DrawRectangle(screen, SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50, 300,
                     100, red, blue);
       sprintf(text, "Press 'N' to start");
-      DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 24 / 2,
+      DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 12 / 2,
                  SCREEN_HEIGHT / 2 - 10, text, charset);
       sprintf(text, "ESC to exit");
-      DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 24 / 2,
-                 SCREEN_HEIGHT / 2 + 20, text, charset);
+      DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 12 / 2,
+                 SCREEN_HEIGHT / 2 + 10, text, charset);
     }
 
     fpsTimer += delta;
