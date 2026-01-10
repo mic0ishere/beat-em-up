@@ -139,10 +139,9 @@ void DrawStage(SDL_Surface *screen, double cameraX, Uint32 black,
   DrawFloor(screen, brown);
 }
 
-void DrawPlayer(SDL_Surface *screen, double playerX, double playerY,
-                double cameraX, SDL_Surface *spritemap, PlayerState state) {
-  int screenX = (int)(playerX - cameraX);
-  int screenY = (int)playerY;
+void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
+  int screenX = (int)(game->playerX - game->cameraX);
+  int screenY = (int)game->playerY;
 
   SDL_Rect source, dest;
   source.w = SPRITE_WIDTH;
@@ -150,14 +149,14 @@ void DrawPlayer(SDL_Surface *screen, double playerX, double playerY,
   dest.w = SPRITE_WIDTH;
   dest.h = SPRITE_HEIGHT;
 
-  // Select sprite based on state
-  // First row sprites: standing(0) | attack_crouch(1) | attack_fist_defense(2) | 
-  // hand_long_attack(3) | stomach_attack(4) | stomach_attack_prepare(5) | 
+  // sprites in first row:
+  // standing(0) | attack_crouch(1) | attack_fist_defense(2) |
+  // hand_long_attack(3) | stomach_attack(4) | stomach_attack_prepare(5) |
   // jump_forward(6) | jump_landing(7)
   int spriteIndex = 0;
-  if (state == STATE_LIGHT_ATTACK) {
+  if (game->state == STATE_LIGHT_ATTACK) {
     spriteIndex = 3; // hand_long_attack for light attack
-  } else if (state == STATE_HEAVY_ATTACK) {
+  } else if (game->state == STATE_HEAVY_ATTACK) {
     spriteIndex = 4; // stomach_attack for heavy attack
   } else {
     spriteIndex = 0; // standing idle
@@ -174,7 +173,7 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
              double fps, Uint32 outlineColor, Uint32 fillColor) {
   char text[128];
 
-  DrawRectangle(screen, 8, 8, SCREEN_WIDTH - 16, 50, outlineColor, fillColor);
+  DrawRectangle(screen, 8, 8, SCREEN_WIDTH - 16, 62, outlineColor, fillColor);
 
   sprintf(text, "BEAT 'EM UP GAME");
   DrawString(screen, screen->w / 2 - strlen(text) * 12 / 2, 12, text, charset);
@@ -183,8 +182,11 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
           game->worldTime, game->playerX, SCREEN_HEIGHT - game->playerY, fps);
   DrawString(screen, 16, 26, text, charset);
 
-  sprintf(text, "exit [ESC] | new game [N] | move [WSAD] | light attack [X] | heavy attack [Y]");
+  sprintf(text, "move [WSAD] | light attack [X] | heavy attack [Y]");
   DrawString(screen, 16, 40, text, charset);
+
+  sprintf(text, "exit [ESC] | new game [N]");
+  DrawString(screen, 16, 54, text, charset);
 }
 
 void UpdatePlayerPosition(GameState *game, double delta) {
@@ -218,10 +220,10 @@ void UpdatePlayerPosition(GameState *game, double delta) {
 void UpdateAttackState(GameState *game, double delta) {
   if (game->state != STATE_IDLE) {
     game->attackTimer += delta;
-    
+
     double attackDuration = 0;
     int totalFrames = 0;
-    
+
     if (game->state == STATE_LIGHT_ATTACK) {
       attackDuration = LIGHT_ATTACK_DURATION;
       totalFrames = LIGHT_ATTACK_FRAMES;
@@ -229,9 +231,10 @@ void UpdateAttackState(GameState *game, double delta) {
       attackDuration = HEAVY_ATTACK_DURATION;
       totalFrames = HEAVY_ATTACK_FRAMES;
     }
-    
-    game->animationFrame = (int)(game->attackTimer / attackDuration * totalFrames);
-    
+
+    game->animationFrame =
+        (int)(game->attackTimer / attackDuration * totalFrames);
+
     if (game->attackTimer >= attackDuration) {
       game->state = STATE_IDLE;
       game->attackTimer = 0;
@@ -358,7 +361,7 @@ int main(int argc, char **argv) {
     SDL_FillRect(screen, NULL, black);
 
     DrawStage(screen, game.cameraX, black, brown);
-    DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, spritemap, game.state);
+    DrawPlayer(screen, spritemap, &game);
 
     fpsTimer += delta;
     if (fpsTimer > 0.5) {
