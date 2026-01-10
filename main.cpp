@@ -102,7 +102,6 @@ struct GameState {
   double playerX, playerY;
   double cameraX;
   double worldTime;
-  bool gameActive;
   int moveLeft, moveRight, moveUp, moveDown;
 };
 
@@ -111,7 +110,6 @@ void InitGame(GameState *game) {
   game->playerY = FLOOR_Y;
   game->cameraX = 0;
   game->worldTime = 0;
-  game->gameActive = false;
   game->moveLeft = 0;
   game->moveRight = 0;
   game->moveUp = 0;
@@ -318,28 +316,14 @@ int main(int argc, char **argv) {
     delta = (timeNow - timeLast) * 0.001;
     timeLast = timeNow;
 
-    if (game.gameActive) {
-      game.worldTime += delta;
-      UpdatePlayerPosition(&game, delta);
-      UpdateCamera(&game, delta);
-    }
+    game.worldTime += delta;
+    UpdatePlayerPosition(&game, delta);
+    UpdateCamera(&game, delta);
 
     SDL_FillRect(screen, NULL, black);
 
-    if (game.gameActive) {
-      DrawStage(screen, game.cameraX, black, gray, brown);
-      DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, spritemap);
-    } else {
-      char text[128];
-      DrawRectangle(screen, SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50, 300,
-                    100, red, blue);
-      sprintf(text, "Press 'N' to start");
-      DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 12 / 2,
-                 SCREEN_HEIGHT / 2 - 10, text, charset);
-      sprintf(text, "ESC to exit");
-      DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 12 / 2,
-                 SCREEN_HEIGHT / 2 + 10, text, charset);
-    }
+    DrawStage(screen, game.cameraX, black, gray, brown);
+    DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, spritemap);
 
     fpsTimer += delta;
     if (fpsTimer > 0.5) {
