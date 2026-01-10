@@ -140,12 +140,22 @@ struct GameState {
   double keyPressTime[4];
 };
 
+struct SDLResources {
+  SDL_Window *window;
+  SDL_Renderer *renderer;
+  SDL_Surface *screen;
+  SDL_Texture *screenTexture;
+  SDL_Surface *charset;
+  SDL_Surface *spritemap;
+  SDL_Surface *cloudTexture;
+  SDL_Surface *floorTexture;
+};
+
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
                 SDL_Surface *charset) {
-
   SDL_Rect source, dest;
   source.w = FONT_SRC_WIDTH;
-  source.h = 26;
+  source.h = FONT_SRC_HEIGHT;
   dest.w = FONT_SIZE;
   dest.h = FONT_SIZE;
 
@@ -208,7 +218,8 @@ void InitGame(GameState *game) {
   game->bufferCount = 0;
   game->lastInputTime = 0;
   game->debugMenuEnabled = 0;
-  strcpy(game->currentActionName, "idle");
+  strncpy(game->currentActionName, "idle", sizeof(game->currentActionName) - 1);
+  game->currentActionName[sizeof(game->currentActionName) - 1] = '\0';
 
   // initialize key press times
   for (int i = 0; i < 4; i++) {
@@ -244,7 +255,7 @@ void CleanInputBuffer(GameState *game) {
   game->bufferCount = writeIdx;
 }
 
-bool MatchesCombo(GameState *game, const ComboDefinition *combo) {
+bool MatchesCombo(GameState *game, ComboDefinition *combo) {
   if (game->bufferCount < combo->length)
     return false;
 
@@ -272,8 +283,10 @@ void CheckCombos(GameState *game) {
 
     game->state = combos[i].resultState;
     game->attackTimer = combos[i].duration;
-    strcpy(game->currentActionName, combos[i].name);
-    
+    strncpy(game->currentActionName, combos[i].name,
+            sizeof(game->currentActionName) - 1);
+    game->currentActionName[sizeof(game->currentActionName) - 1] = '\0';
+
     // clear buffer after successful combo
     game->bufferCount = 0;
 
@@ -366,16 +379,22 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
   SDL_BlitScaled(spritemap, &source, screen, &dest);
 }
 
-void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game) {
+void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
+                   Uint32 outlineColor, Uint32 fillColor) {
+  DrawRectangle(screen, 8, DEBUG_MENU_START, SCREEN_WIDTH - 16, 48,
+                outlineColor, fillColor);
+
   char text[128];
-  sprintf(text, "DEBUG MENU - Current Action: %s", game->currentActionName);
+  snprintf(text, sizeof(text), "DEBUG MENU - Current Action: %s",
+           game->currentActionName);
   DrawString(screen, 16, DEBUG_MENU_START + 4, text, charset);
 
-  sprintf(text, "Input Buffer (%d):", game->bufferCount);
+  snprintf(text, sizeof(text), "Input Buffer (%d):", game->bufferCount);
   DrawString(screen, 16, DEBUG_MENU_START + 18, text, charset);
 
   char bufferText[128] = "";
-  for (int i = 0; i < game->bufferCount; i++) {
+  int bufferPos = 0;
+  for (int i = 0; i < game->bufferCount && bufferPos < 120; i++) {
     const char *inputName = "?";
     switch (game->inputBuffer[i].type) {
     case INPUT_LIGHT:
@@ -397,16 +416,12 @@ void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game) {
       inputName = "D";
       break;
     }
-    strcat(bufferText, inputName);
-    if (i < game->bufferCount - 1)
-      strcat(bufferText, "-");
+    bufferPos +=
+        snprintf(bufferText + bufferPos, sizeof(bufferText) - bufferPos, "%s%s",
+                 inputName, (i < game->bufferCount - 1) ? "-" : "");
   }
-  sprintf(text, "[%s]", bufferText);
+  snprintf(text, sizeof(text), "[%s]", bufferText);
   DrawString(screen, 16, DEBUG_MENU_START + 32, text, charset);
-
-  sprintf(text, "Time since last input: %.2lf s",
-          game->worldTime - game->lastInputTime);
-  DrawString(screen, 16, DEBUG_MENU_START + 46, text, charset);
 }
 
 void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
@@ -415,22 +430,18 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
 
   DrawRectangle(screen, 8, 8, SCREEN_WIDTH - 16, 50, outlineColor, fillColor);
 
-  sprintf(text, "BEAT 'EM UP GAME");
+  snprintf(text, sizeof(text), "BEAT 'EM UP GAME");
   DrawString(screen, screen->w / 2 - strlen(text) * 12 / 2, 12, text, charset);
 
-  sprintf(text, "time: %.1lf s | position: (%.0lf, %.0lf) | fps: %.0lf",
-          game->worldTime, game->playerX, SCREEN_HEIGHT - game->playerY, fps);
+  snprintf(text, sizeof(text),
+           "time: %.1lf s | position: (%.0lf, %.0lf) | fps: %.0lf",
+           game->worldTime, game->playerX, SCREEN_HEIGHT - game->playerY, fps);
   DrawString(screen, 16, 26, text, charset);
 
-  sprintf(text, "exit [ESC] | new game [N] | move [WSAD] | crouch [R] | heavy "
-                "attack [F] | debug menu [B]");
+  snprintf(text, sizeof(text),
+           "exit [ESC] | new game [N] | move [WSAD] | crouch [R] | heavy "
+           "attack [F] | debug menu [B]");
   DrawString(screen, 16, 40, text, charset);
-
-  if (game->debugMenuEnabled) {
-    DrawRectangle(screen, 8, DEBUG_MENU_START, SCREEN_WIDTH - 16, 60,
-                  outlineColor, fillColor);
-    DrawDebugMenu(screen, charset, game);
-  }
 }
 
 void UpdatePlayerPosition(GameState *game, double delta) {
@@ -468,7 +479,9 @@ void UpdateAttackState(GameState *game, double delta) {
 
     if (game->attackTimer <= 0) {
       game->state = STATE_IDLE;
-      strcpy(game->currentActionName, "idle");
+      strncpy(game->currentActionName, "idle",
+              sizeof(game->currentActionName) - 1);
+      game->currentActionName[sizeof(game->currentActionName) - 1] = '\0';
     }
   }
 
@@ -484,7 +497,9 @@ void StartLightAttack(GameState *game) {
   if (game->state == STATE_IDLE) {
     game->state = STATE_CROUCH_DEFENSE;
     game->attackTimer = CROUCH_DEFENSE_DURATION;
-    strcpy(game->currentActionName, "crouch defense");
+    strncpy(game->currentActionName, "crouch defense",
+            sizeof(game->currentActionName) - 1);
+    game->currentActionName[sizeof(game->currentActionName) - 1] = '\0';
   }
 }
 
@@ -496,7 +511,9 @@ void StartHeavyAttack(GameState *game) {
   if (game->state == STATE_IDLE) {
     game->state = STATE_HEAVY_ATTACK;
     game->attackTimer = HEAVY_ATTACK_DURATION;
-    strcpy(game->currentActionName, "heavy attack");
+    strncpy(game->currentActionName, "heavy attack",
+            sizeof(game->currentActionName) - 1);
+    game->currentActionName[sizeof(game->currentActionName) - 1] = '\0';
   }
 }
 
@@ -512,106 +529,220 @@ void UpdateCamera(GameState *game, double delta) {
   game->cameraX += cameraDiff * CAMERA_SMOOTH_FACTOR * delta;
 }
 
-void CleanupSDL(SDL_Surface *charset, SDL_Surface *spritemap,
-                SDL_Surface *cloudTexture, SDL_Surface *floorTexture,
-                SDL_Surface *screen, SDL_Texture *texture,
-                SDL_Renderer *renderer, SDL_Window *window) {
-  if (charset)
-    SDL_FreeSurface(charset);
-  if (spritemap)
-    SDL_FreeSurface(spritemap);
-  if (cloudTexture)
-    SDL_FreeSurface(cloudTexture);
-  if (floorTexture)
-    SDL_FreeSurface(floorTexture);
-  SDL_FreeSurface(screen);
-  SDL_DestroyTexture(texture);
-  SDL_DestroyRenderer(renderer);
-  SDL_DestroyWindow(window);
+void HandleMovementKeyDown(GameState *game, SDL_Keycode key, bool repeat) {
+  int keyIndex = -1;
+  int *moveFlag = NULL;
+
+  if (key == SDLK_a) {
+    keyIndex = 1;
+    moveFlag = &game->moveLeft;
+  } else if (key == SDLK_d) {
+    keyIndex = 3;
+    moveFlag = &game->moveRight;
+  } else if (key == SDLK_w) {
+    keyIndex = 0;
+    moveFlag = &game->moveUp;
+  } else if (key == SDLK_s) {
+    keyIndex = 2;
+    moveFlag = &game->moveDown;
+  }
+
+  if (moveFlag) {
+    if (!repeat) {
+      game->keyPressTime[keyIndex] = game->worldTime;
+    }
+    *moveFlag = 1;
+  }
+}
+
+void HandleMovementKeyUp(GameState *game, SDL_Keycode key) {
+  int keyIndex = -1;
+  int *moveFlag = NULL;
+  InputType inputType = INPUT_NONE;
+
+  if (key == SDLK_a) {
+    keyIndex = 1;
+    moveFlag = &game->moveLeft;
+    inputType = INPUT_LEFT;
+  } else if (key == SDLK_d) {
+    keyIndex = 3;
+    moveFlag = &game->moveRight;
+    inputType = INPUT_RIGHT;
+  } else if (key == SDLK_w) {
+    keyIndex = 0;
+    moveFlag = &game->moveUp;
+    inputType = INPUT_UP;
+  } else if (key == SDLK_s) {
+    keyIndex = 2;
+    moveFlag = &game->moveDown;
+    inputType = INPUT_DOWN;
+  }
+
+  if (moveFlag) {
+    *moveFlag = 0;
+    if (game->worldTime - game->keyPressTime[keyIndex] < DASH_TAP_THRESHOLD) {
+      AddInput(game, inputType);
+      CheckCombos(game);
+    }
+  }
+}
+
+void HandleEvents(GameState *game, int *quit) {
+  SDL_Event event;
+  while (SDL_PollEvent(&event)) {
+    switch (event.type) {
+    case SDL_KEYDOWN:
+      if (event.key.keysym.sym == SDLK_ESCAPE)
+        *quit = 1;
+      else if (event.key.keysym.sym == SDLK_n)
+        InitGame(game);
+      else if (event.key.keysym.sym == SDLK_b)
+        game->debugMenuEnabled = !game->debugMenuEnabled;
+      else if (event.key.keysym.sym == SDLK_r)
+        StartLightAttack(game);
+      else if (event.key.keysym.sym == SDLK_f)
+        StartHeavyAttack(game);
+      else
+        HandleMovementKeyDown(game, event.key.keysym.sym, event.key.repeat);
+      break;
+    case SDL_KEYUP:
+      HandleMovementKeyUp(game, event.key.keysym.sym);
+      break;
+    case SDL_QUIT:
+      *quit = 1;
+      break;
+    }
+  }
+}
+
+void RenderFrame(SDLResources *res, GameState *game, double fps) {
+  Uint32 black = SDL_MapRGB(res->screen->format, 0x00, 0x00, 0x00);
+
+  SDL_FillRect(res->screen, NULL, black);
+
+  DrawStage(res->screen, game->cameraX, res->cloudTexture, res->floorTexture,
+            game);
+  DrawPlayer(res->screen, res->spritemap, game);
+  DrawHUD(res->screen, res->charset, game, fps, black, black);
+
+  if (game->debugMenuEnabled) {
+    DrawDebugMenu(res->screen, res->charset, game, black, black);
+  }
+
+  SDL_UpdateTexture(res->screenTexture, NULL, res->screen->pixels,
+                    res->screen->pitch);
+  SDL_RenderCopy(res->renderer, res->screenTexture, NULL, NULL);
+  SDL_RenderPresent(res->renderer);
+}
+
+void CleanupSDL(SDLResources *res) {
+  if (res->charset)
+    SDL_FreeSurface(res->charset);
+  if (res->spritemap)
+    SDL_FreeSurface(res->spritemap);
+  if (res->cloudTexture)
+    SDL_FreeSurface(res->cloudTexture);
+  if (res->floorTexture)
+    SDL_FreeSurface(res->floorTexture);
+  if (res->screen)
+    SDL_FreeSurface(res->screen);
+  if (res->screenTexture)
+    SDL_DestroyTexture(res->screenTexture);
+  if (res->renderer)
+    SDL_DestroyRenderer(res->renderer);
+  if (res->window)
+    SDL_DestroyWindow(res->window);
   SDL_Quit();
 }
 
-int main(int argc, char **argv) {
-  SDL_Event event;
-  SDL_Surface *screen, *charset, *spritemap, *cloudTexture, *floorTexture;
-  SDL_Texture *screenTexture;
-  SDL_Window *window;
-  SDL_Renderer *renderer;
-  GameState game;
+bool InitializeSDL(SDLResources *res) {
+  memset(res, 0, sizeof(SDLResources));
 
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
     printf("SDL_Init error: %s\n", SDL_GetError());
-    return 1;
+    return false;
   }
 
-  srand(time(NULL));
-
-  int rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0, &window,
-                                       &renderer);
+  int rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0,
+                                       &res->window, &res->renderer);
   if (rc != 0) {
-    SDL_Quit();
     printf("SDL_CreateWindowAndRenderer error: %s\n", SDL_GetError());
-    return 1;
+    SDL_Quit();
+    return false;
   }
 
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-  SDL_RenderSetLogicalSize(renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
-  SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-  SDL_SetWindowTitle(window, "Beat 'em Up Game");
+  SDL_RenderSetLogicalSize(res->renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+  SDL_SetRenderDrawColor(res->renderer, 0, 0, 0, 255);
+  SDL_SetWindowTitle(res->window, "Beat 'em Up Game");
 
-  screen = SDL_CreateRGBSurface(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0x00FF0000,
-                                0x0000FF00, 0x000000FF, 0xFF000000);
+  res->screen =
+      SDL_CreateRGBSurface(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0x00FF0000,
+                           0x0000FF00, 0x000000FF, 0xFF000000);
 
-  screenTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-                                    SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH,
-                                    SCREEN_HEIGHT);
+  res->screenTexture = SDL_CreateTexture(
+      res->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+      SCREEN_WIDTH, SCREEN_HEIGHT);
 
   SDL_ShowCursor(SDL_DISABLE);
+  return true;
+}
 
-  charset = SDL_LoadBMP("./vcr_osd_mono.bmp");
-  if (charset == NULL) {
+bool LoadResources(SDLResources *res) {
+  res->charset = SDL_LoadBMP("./vcr_osd_mono.bmp");
+  if (res->charset == NULL) {
     printf("SDL_LoadBMP(vcr_osd_mono.bmp) error: %s\n", SDL_GetError());
-    CleanupSDL(NULL, NULL, NULL, NULL, screen, screenTexture, renderer, window);
-    return 1;
+    return false;
   }
-  SDL_SetColorKey(charset, true, 0x000000);
+  SDL_SetColorKey(res->charset, true, 0x000000);
 
-  spritemap = SDL_LoadBMP("./player_sprite.bmp");
-  if (spritemap == NULL) {
+  res->spritemap = SDL_LoadBMP("./player_sprite.bmp");
+  if (res->spritemap == NULL) {
     printf("SDL_LoadBMP(player_sprite.bmp) error: %s\n", SDL_GetError());
-    CleanupSDL(charset, NULL, NULL, NULL, screen, screenTexture, renderer,
-               window);
+    return false;
+  }
+  SDL_SetColorKey(res->spritemap, true, 0x000000);
+
+  res->cloudTexture = SDL_LoadBMP("./texture_clouds.bmp");
+  if (res->cloudTexture == NULL) {
+    printf("SDL_LoadBMP(texture_clouds.bmp) error: %s\n", SDL_GetError());
+    return false;
+  }
+
+  res->floorTexture = SDL_LoadBMP("./texture_floor.bmp");
+  if (res->floorTexture == NULL) {
+    printf("SDL_LoadBMP(texture_floor.bmp) error: %s\n", SDL_GetError());
+    return false;
+  }
+
+  return true;
+}
+
+int main(int argc, char **argv) {
+  SDLResources res;
+  GameState game;
+
+  srand(time(NULL));
+
+  if (!InitializeSDL(&res)) {
     return 1;
   }
-  SDL_SetColorKey(spritemap, true, 0x000000);
 
-  cloudTexture = SDL_LoadBMP("./texture_clouds.bmp");
-  if (cloudTexture == NULL) {
-    printf("Warning: SDL_LoadBMP(texture_clouds.bmp) error: %s\n",
-           SDL_GetError());
-    printf("Continuing without cloud texture...\n");
+  if (!LoadResources(&res)) {
+    CleanupSDL(&res);
+    return 1;
   }
-
-  floorTexture = SDL_LoadBMP("./texture_floor.bmp");
-  if (floorTexture == NULL) {
-    printf("Warning: SDL_LoadBMP(texture_floor.bmp) error: %s\n",
-           SDL_GetError());
-    printf("Continuing without floor texture...\n");
-  }
-
-  Uint32 black = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
 
   InitGame(&game);
 
   int timeLast = SDL_GetTicks();
-  int timeNow = 0;
   int frames = 0;
   int quit = 0;
   double fpsTimer = 0;
   double fps = 0;
 
   while (!quit) {
-    timeNow = SDL_GetTicks();
+    int timeNow = SDL_GetTicks();
     double delta = (timeNow - timeLast) * 0.001;
     timeLast = timeNow;
 
@@ -620,11 +751,6 @@ int main(int argc, char **argv) {
     UpdateAttackState(&game, delta);
     UpdateCamera(&game, delta);
 
-    SDL_FillRect(screen, NULL, black);
-
-    DrawStage(screen, game.cameraX, cloudTexture, floorTexture, &game);
-    DrawPlayer(screen, spritemap, &game);
-
     fpsTimer += delta;
     if (fpsTimer > 0.5) {
       fps = frames * 2;
@@ -632,83 +758,11 @@ int main(int argc, char **argv) {
       fpsTimer -= 0.5;
     }
 
-    DrawHUD(screen, charset, &game, fps, black, black);
-
-    SDL_UpdateTexture(screenTexture, NULL, screen->pixels, screen->pitch);
-    SDL_RenderCopy(renderer, screenTexture, NULL, NULL);
-    SDL_RenderPresent(renderer);
-
-    while (SDL_PollEvent(&event)) {
-      switch (event.type) {
-      case SDL_KEYDOWN:
-        if (event.key.keysym.sym == SDLK_ESCAPE)
-          quit = 1;
-        else if (event.key.keysym.sym == SDLK_n)
-          InitGame(&game);
-        else if (event.key.keysym.sym == SDLK_b)
-          game.debugMenuEnabled = !game.debugMenuEnabled;
-        else if (event.key.keysym.sym == SDLK_a) {
-          if (!event.key.repeat) {                 // Ignore key repeats
-            game.keyPressTime[1] = game.worldTime; // Track press time for left
-          }
-          game.moveLeft = 1;
-        } else if (event.key.keysym.sym == SDLK_d) {
-          if (!event.key.repeat) {
-            game.keyPressTime[3] = game.worldTime; // Track press time for right
-          }
-          game.moveRight = 1;
-        } else if (event.key.keysym.sym == SDLK_w) {
-          if (!event.key.repeat) {
-            game.keyPressTime[0] = game.worldTime; // Track press time for up
-          }
-          game.moveUp = 1;
-        } else if (event.key.keysym.sym == SDLK_s) {
-          if (!event.key.repeat) {
-            game.keyPressTime[2] = game.worldTime; // Track press time for down
-          }
-          game.moveDown = 1;
-        } else if (event.key.keysym.sym == SDLK_r)
-          StartLightAttack(&game);
-        else if (event.key.keysym.sym == SDLK_f)
-          StartHeavyAttack(&game);
-        break;
-      case SDL_KEYUP:
-        if (event.key.keysym.sym == SDLK_a) {
-          game.moveLeft = 0;
-          // Only add to buffer if it was a tap (quick press)
-          if (game.worldTime - game.keyPressTime[1] < DASH_TAP_THRESHOLD) {
-            AddInput(&game, INPUT_LEFT);
-            CheckCombos(&game);
-          }
-        } else if (event.key.keysym.sym == SDLK_d) {
-          game.moveRight = 0;
-          if (game.worldTime - game.keyPressTime[3] < DASH_TAP_THRESHOLD) {
-            AddInput(&game, INPUT_RIGHT);
-            CheckCombos(&game);
-          }
-        } else if (event.key.keysym.sym == SDLK_w) {
-          game.moveUp = 0;
-          if (game.worldTime - game.keyPressTime[0] < DASH_TAP_THRESHOLD) {
-            AddInput(&game, INPUT_UP);
-            CheckCombos(&game);
-          }
-        } else if (event.key.keysym.sym == SDLK_s) {
-          game.moveDown = 0;
-          if (game.worldTime - game.keyPressTime[2] < DASH_TAP_THRESHOLD) {
-            AddInput(&game, INPUT_DOWN);
-            CheckCombos(&game);
-          }
-        }
-        break;
-      case SDL_QUIT:
-        quit = 1;
-        break;
-      }
-    }
+    RenderFrame(&res, &game, fps);
+    HandleEvents(&game, &quit);
     frames++;
   }
 
-  CleanupSDL(charset, spritemap, cloudTexture, floorTexture, screen,
-             screenTexture, renderer, window);
+  CleanupSDL(&res);
   return 0;
 }
