@@ -418,10 +418,6 @@ void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game) {
   }
   snprintf(text, sizeof(text), "[%s]", bufferText);
   DrawString(screen, 16, DEBUG_MENU_START + 32, text, charset);
-
-  snprintf(text, sizeof(text), "Time since last input: %.2lf s",
-           game->worldTime - game->lastInputTime);
-  DrawString(screen, 16, DEBUG_MENU_START + 46, text, charset);
 }
 
 void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
@@ -444,7 +440,7 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
   DrawString(screen, 16, 40, text, charset);
 
   if (game->debugMenuEnabled) {
-    DrawRectangle(screen, 8, DEBUG_MENU_START, SCREEN_WIDTH - 16, 60,
+    DrawRectangle(screen, 8, DEBUG_MENU_START, SCREEN_WIDTH - 16, 48,
                   outlineColor, fillColor);
     DrawDebugMenu(screen, charset, game);
   }
