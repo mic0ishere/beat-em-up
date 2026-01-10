@@ -1,6 +1,6 @@
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 extern "C" {
@@ -27,10 +27,6 @@ extern "C" {
 #define FLOOR_TILES_HORIZONTAL ((STAGE_WIDTH / FLOOR_TILE_SIZE) + 2)
 #define FLOOR_TILES_VERTICAL ((FLOOR_HEIGHT / FLOOR_TILE_SIZE) + 1)
 
-// Depth scaling parameters
-#define DEPTH_SCALE_MIN 0.7  // minimum scale (at bottom of screen)
-#define DEPTH_SCALE_MAX 1.0  // maximum scale (at top of play area)
-
 #define FONT_SIZE 10
 #define FONT_SRC_WIDTH 20
 #define FONT_SRC_HEIGHT 26
@@ -41,17 +37,30 @@ extern "C" {
 #define SPRITE_HEIGHT                                                          \
   ((int)(SPRITE_SRC_HEIGHT * ((double)SPRITE_WIDTH / SPRITE_SRC_WIDTH)))
 
-#define CROUCH_DEFENSE_DURATION 0.3
-#define HEAVY_ATTACK_DURATION 0.6
-
+// input buffer parameters
 #define INPUT_BUFFER_SIZE 10
-#define INPUT_TIMEOUT 0.8 // seconds before input expires
-#define DASH_DURATION 0.3
-#define TRIPLE_ATTACK_DURATION 1.5
-#define COMBO_SEQUENCE_DURATION 2.0
+#define INPUT_TIMEOUT 0.8      // seconds before input expires
 #define DASH_TAP_THRESHOLD 0.4 // max time for a key press to count as a tap
 
+// attack durations
+#define DASH_DURATION 0.3
+#define CROUCH_DEFENSE_DURATION 0.3
+#define HEAVY_ATTACK_DURATION 0.6
+#define TRIPLE_ATTACK_DURATION 1.5
+#define COMBO_SEQUENCE_DURATION 2.0
+
+// depth scaling parameters
+#define DEPTH_SCALE_MIN 0.8
+#define DEPTH_SCALE_MAX 1.2
+
+// debug menu position
 #define DEBUG_MENU_START 70
+
+// utility macros
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+
+const int SKY_HEIGHT = SCREEN_HEIGHT - FLOOR_HEIGHT;
 
 enum InputType {
   INPUT_NONE = 0,
@@ -73,20 +82,45 @@ enum PlayerState {
   STATE_DASH = 6                 // Quick movement dash
 };
 
-// Structure to hold input buffer entries
-struct InputEntry {
+struct BufferInputEntry {
   InputType type;
   double timestamp;
 };
 
 // Structure for combo definitions - makes it easy to add new combos
 struct ComboDefinition {
-  InputType sequence[5]; // Max 5 inputs in a combo
+  InputType sequence[5]; // max 5 inputs in a combo
   int length;
   PlayerState resultState;
   double duration;
   const char *name;
 };
+
+ComboDefinition combos[] = {
+    // Triple light attack (R-R-R)
+    {{INPUT_LIGHT, INPUT_LIGHT, INPUT_LIGHT},
+     3,
+     STATE_TRIPLE_LIGHT_ATTACK,
+     TRIPLE_ATTACK_DURATION,
+     "triple light"},
+    // Triple heavy attack (F-F-F)
+    {{INPUT_HEAVY, INPUT_HEAVY, INPUT_HEAVY},
+     3,
+     STATE_TRIPLE_HEAVY_ATTACK,
+     TRIPLE_ATTACK_DURATION,
+     "triple heavy"},
+    // Combo sequence (R-F-R)
+    {{INPUT_LIGHT, INPUT_HEAVY, INPUT_LIGHT},
+     3,
+     STATE_COMBO_SEQUENCE,
+     COMBO_SEQUENCE_DURATION,
+     "combo sequence"},
+    // Dash combos - double tap movement keys
+    {{INPUT_LEFT, INPUT_LEFT}, 2, STATE_DASH, DASH_DURATION, "dash left"},
+    {{INPUT_RIGHT, INPUT_RIGHT}, 2, STATE_DASH, DASH_DURATION, "dash right"},
+    {{INPUT_UP, INPUT_UP}, 2, STATE_DASH, DASH_DURATION, "dash up"},
+    {{INPUT_DOWN, INPUT_DOWN}, 2, STATE_DASH, DASH_DURATION, "dash down"}};
+const int comboCount = sizeof(combos) / sizeof(ComboDefinition);
 
 struct GameState {
   double playerX, playerY;
@@ -96,17 +130,14 @@ struct GameState {
   PlayerState state;
   double attackTimer;
 
-  InputEntry inputBuffer[INPUT_BUFFER_SIZE];
+  BufferInputEntry inputBuffer[INPUT_BUFFER_SIZE];
   int bufferCount;
   double lastInputTime;
   int debugMenuEnabled;
   char currentActionName[64];
 
-  // Track key press times for tap detection
-  double keyPressTime[4]; // W, A, S, D (up, left, down, right)
-  
-  // Floor tile pattern - stores which tile (0 or 1) to use at each position
-  int floorPattern[FLOOR_TILES_VERTICAL * FLOOR_TILES_HORIZONTAL];
+  // track key press times for tap detection (W/A/S/D)
+  double keyPressTime[4];
 };
 
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
@@ -178,48 +209,16 @@ void InitGame(GameState *game) {
   game->lastInputTime = 0;
   game->debugMenuEnabled = 0;
   strcpy(game->currentActionName, "idle");
-  // Initialize key press times
+
+  // initialize key press times
   for (int i = 0; i < 4; i++) {
     game->keyPressTime[i] = 0;
   }
-  
-  // Initialize floor pattern with random tiles
-  for (int i = 0; i < FLOOR_TILES_VERTICAL * FLOOR_TILES_HORIZONTAL; i++) {
-    game->floorPattern[i] = rand() % 2;  // randomly choose tile 0 or 1
-  }
 }
 
-// Define all combos - easy to add new ones by adding entries here
-ComboDefinition combos[] = {
-    // Triple light attack (R-R-R)
-    {{INPUT_LIGHT, INPUT_LIGHT, INPUT_LIGHT},
-     3,
-     STATE_TRIPLE_LIGHT_ATTACK,
-     TRIPLE_ATTACK_DURATION,
-     "triple light"},
-    // Triple heavy attack (F-F-F)
-    {{INPUT_HEAVY, INPUT_HEAVY, INPUT_HEAVY},
-     3,
-     STATE_TRIPLE_HEAVY_ATTACK,
-     TRIPLE_ATTACK_DURATION,
-     "triple heavy"},
-    // Combo sequence (R-F-R)
-    {{INPUT_LIGHT, INPUT_HEAVY, INPUT_LIGHT},
-     3,
-     STATE_COMBO_SEQUENCE,
-     COMBO_SEQUENCE_DURATION,
-     "combo sequence"},
-    // Dash combos - double tap movement keys
-    {{INPUT_LEFT, INPUT_LEFT}, 2, STATE_DASH, DASH_DURATION, "dash left"},
-    {{INPUT_RIGHT, INPUT_RIGHT}, 2, STATE_DASH, DASH_DURATION, "dash right"},
-    {{INPUT_UP, INPUT_UP}, 2, STATE_DASH, DASH_DURATION, "dash up"},
-    {{INPUT_DOWN, INPUT_DOWN}, 2, STATE_DASH, DASH_DURATION, "dash down"}};
-const int comboCount = sizeof(combos) / sizeof(ComboDefinition);
-
-// Add input to buffer
 void AddInput(GameState *game, InputType input) {
   if (game->bufferCount >= INPUT_BUFFER_SIZE) {
-    // Shift buffer left to make room
+    // shift buffer left to make room
     for (int i = 0; i < INPUT_BUFFER_SIZE - 1; i++) {
       game->inputBuffer[i] = game->inputBuffer[i + 1];
     }
@@ -232,7 +231,6 @@ void AddInput(GameState *game, InputType input) {
   game->lastInputTime = game->worldTime;
 }
 
-// Clean expired inputs from buffer
 void CleanInputBuffer(GameState *game) {
   int writeIdx = 0;
   for (int i = 0; i < game->bufferCount; i++) {
@@ -246,12 +244,11 @@ void CleanInputBuffer(GameState *game) {
   game->bufferCount = writeIdx;
 }
 
-// Check if buffer matches a combo sequence
 bool MatchesCombo(GameState *game, const ComboDefinition *combo) {
   if (game->bufferCount < combo->length)
     return false;
 
-  // Check last N inputs match the combo
+  // check last inputs to match the combo
   int startIdx = game->bufferCount - combo->length;
   for (int i = 0; i < combo->length; i++) {
     if (game->inputBuffer[startIdx + i].type != combo->sequence[i]) {
@@ -261,9 +258,8 @@ bool MatchesCombo(GameState *game, const ComboDefinition *combo) {
   return true;
 }
 
-// Check for combo matches and execute
 void CheckCombos(GameState *game) {
-  // Allow interrupt of basic attacks with combos, but not combo attacks
+  // allow interrupt of basic attacks with combos, but not combo attacks
   bool canInterrupt =
       (game->state == STATE_IDLE || game->state == STATE_CROUCH_DEFENSE ||
        game->state == STATE_HEAVY_ATTACK);
@@ -271,94 +267,56 @@ void CheckCombos(GameState *game) {
     return;
 
   for (int i = 0; i < comboCount; i++) {
-    if (MatchesCombo(game, &combos[i])) {
-      game->state = combos[i].resultState;
-      game->attackTimer = combos[i].duration;
-      strcpy(game->currentActionName, combos[i].name);
-      // Clear buffer after successful combo
-      game->bufferCount = 0;
-      return;
-    }
+    if (!MatchesCombo(game, &combos[i]))
+      continue;
+
+    game->state = combos[i].resultState;
+    game->attackTimer = combos[i].duration;
+    strcpy(game->currentActionName, combos[i].name);
+    
+    // clear buffer after successful combo
+    game->bufferCount = 0;
+
+    return;
   }
 }
 
-void DrawSkyGradient(SDL_Surface *screen) {
-  for (int y = 0; y < SCREEN_HEIGHT - FLOOR_HEIGHT; y++) {
-    // todo: improve gradient calculation
-    int blue = 0x33 + (0x88 - 0x33) * y / SCREEN_HEIGHT - FLOOR_HEIGHT;
-    Uint32 skyColor = SDL_MapRGB(screen->format, 0x66, 0x99, blue);
-    DrawLine(screen, 0, y, SCREEN_WIDTH, 1, 0, skyColor);
-  }
-}
-
-void DrawFloor(SDL_Surface *screen, Uint32 brown) {
-  for (int y = SCREEN_HEIGHT - FLOOR_HEIGHT; y < SCREEN_HEIGHT; y++) {
-    DrawLine(screen, 0, y, SCREEN_WIDTH, 1, 0, brown);
-  }
-}
-
-void DrawStage(SDL_Surface *screen, double cameraX, SDL_Surface *cloudTexture, 
+void DrawStage(SDL_Surface *screen, double cameraX, SDL_Surface *cloudTexture,
                SDL_Surface *floorTexture, GameState *game) {
-  // Draw repeating cloud background
-  if (cloudTexture != NULL) {
-    int skyHeight = SCREEN_HEIGHT - FLOOR_HEIGHT;
-    
-    // Calculate horizontal offset for parallax effect (clouds move slower than camera)
-    int cloudOffsetX = (int)(cameraX * 0.3) % CLOUD_TEXTURE_WIDTH;
-    
-    // Draw clouds repeatedly across the sky
-    for (int x = -cloudOffsetX; x < SCREEN_WIDTH; x += CLOUD_TEXTURE_WIDTH) {
-      for (int y = 0; y < skyHeight; y += CLOUD_TEXTURE_HEIGHT) {
-        SDL_Rect dest;
-        dest.x = x;
-        dest.y = y;
-        dest.w = CLOUD_TEXTURE_WIDTH;
-        dest.h = CLOUD_TEXTURE_HEIGHT;
-        SDL_BlitSurface(cloudTexture, NULL, screen, &dest);
-      }
+  // horizontal offset for parallax effect (clouds move slower than camera)
+  int cloudOffsetX = (int)(cameraX * 0.3) % CLOUD_TEXTURE_WIDTH;
+
+  for (int x = -cloudOffsetX; x < SCREEN_WIDTH; x += CLOUD_TEXTURE_WIDTH) {
+    for (int y = 0; y < SKY_HEIGHT; y += CLOUD_TEXTURE_HEIGHT) {
+      SDL_Rect dest;
+      dest.x = x;
+      dest.y = y;
+      dest.w = CLOUD_TEXTURE_WIDTH;
+      dest.h = CLOUD_TEXTURE_HEIGHT;
+      SDL_BlitSurface(cloudTexture, NULL, screen, &dest);
     }
-  } else {
-    // Fallback to gradient if texture not loaded
-    DrawSkyGradient(screen);
   }
-  
-  // Draw floor with tiled texture
-  if (floorTexture != NULL) {
-    int floorStartY = SCREEN_HEIGHT - FLOOR_HEIGHT;
-    
-    // Calculate which tiles are visible
-    int startTileX = (int)(cameraX / FLOOR_TILE_SIZE);
-    if (startTileX < 0) startTileX = 0;
-    int endTileX = startTileX + (SCREEN_WIDTH / FLOOR_TILE_SIZE) + 2;
-    if (endTileX > FLOOR_TILES_HORIZONTAL) endTileX = FLOOR_TILES_HORIZONTAL;
-    
-    for (int tileY = 0; tileY < FLOOR_TILES_VERTICAL; tileY++) {
-      for (int tileX = startTileX; tileX < endTileX; tileX++) {
-        // Get the tile type from the persistent pattern
-        int patternIndex = tileY * FLOOR_TILES_HORIZONTAL + tileX;
-        int tileType = game->floorPattern[patternIndex];
-        
-        // Calculate source rectangle (which tile from texture to use)
-        SDL_Rect source;
-        source.x = tileType * FLOOR_TILE_SIZE;  // tile 0 or tile 1
-        source.y = 0;
-        source.w = FLOOR_TILE_SIZE;
-        source.h = FLOOR_TILE_SIZE;
-        
-        // Calculate destination on screen
-        SDL_Rect dest;
-        dest.x = (int)(tileX * FLOOR_TILE_SIZE - cameraX);
-        dest.y = floorStartY + tileY * FLOOR_TILE_SIZE;
-        dest.w = FLOOR_TILE_SIZE;
-        dest.h = FLOOR_TILE_SIZE;
-        
-        SDL_BlitSurface(floorTexture, &source, screen, &dest);
-      }
+
+  int startTileX = MAX(0, (int)(cameraX / FLOOR_TILE_SIZE));
+  int endTileX = MIN(startTileX + (SCREEN_WIDTH / FLOOR_TILE_SIZE) + 2,
+                     FLOOR_TILES_HORIZONTAL);
+
+  SDL_Rect sourceTile;
+  sourceTile.x = 0;
+  sourceTile.y = 0;
+  sourceTile.w = FLOOR_TILE_SIZE;
+  sourceTile.h = FLOOR_TILE_SIZE;
+
+  for (int tileY = 0; tileY < FLOOR_TILES_VERTICAL; tileY++) {
+    for (int tileX = startTileX; tileX < endTileX; tileX++) {
+      SDL_Rect dest;
+      dest.x = (int)(tileX * FLOOR_TILE_SIZE - cameraX);
+      dest.y = SKY_HEIGHT + tileY * FLOOR_TILE_SIZE;
+      dest.w = FLOOR_TILE_SIZE;
+      dest.h = FLOOR_TILE_SIZE;
+
+      SDL_BlitSurface(floorTexture, &sourceTile, screen, &dest);
     }
-  } else {
-    // Fallback to solid color if texture not loaded
-    Uint32 brown = SDL_MapRGB(screen->format, 0x8B, 0x4F, 0x2A);
-    DrawFloor(screen, brown);
   }
 }
 
@@ -366,21 +324,16 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
   int screenX = (int)(game->playerX - game->cameraX);
   int screenY = (int)game->playerY;
 
-  // Calculate depth scale based on Y position
-  // Y ranges from (SCREEN_HEIGHT - FLOOR_HEIGHT + 5) at top to SCREEN_HEIGHT at bottom
-  double playAreaTop = SCREEN_HEIGHT - FLOOR_HEIGHT + 5;
-  double playAreaBottom = SCREEN_HEIGHT;
-  double normalizedY = (game->playerY - playAreaTop) / (playAreaBottom - playAreaTop);
-  normalizedY = (normalizedY < 0) ? 0 : (normalizedY > 1) ? 1 : normalizedY;
-  
-  // Scale from DEPTH_SCALE_MAX at top to DEPTH_SCALE_MIN at bottom
-  double depthScale = DEPTH_SCALE_MAX - (DEPTH_SCALE_MAX - DEPTH_SCALE_MIN) * normalizedY;
-  
+  double playerVerticalProgress =
+      MAX(0, MIN(1.0, (double)(SCREEN_HEIGHT - screenY) / FLOOR_HEIGHT));
+
+  double depthScale = DEPTH_SCALE_MAX - (DEPTH_SCALE_MAX - DEPTH_SCALE_MIN) *
+                                            playerVerticalProgress;
+
   SDL_Rect source, dest;
   source.w = SPRITE_SRC_WIDTH;
   source.h = SPRITE_SRC_HEIGHT;
-  
-  // Apply depth scaling to sprite dimensions
+
   dest.w = (int)(SPRITE_WIDTH * depthScale);
   dest.h = (int)(SPRITE_HEIGHT * depthScale);
 
@@ -402,16 +355,14 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
   } else if (game->state == STATE_COMBO_SEQUENCE) {
     spriteIndex = 5; // stomach_attack_prepare for combo
   } else if (game->state == STATE_DASH) {
-    spriteRow = 2;   // Row 3 (index 2)
-    spriteIndex = 1; // Column 2 (index 1) - dash sprite
-  } else {
-    spriteIndex = 0; // standing idle
+    spriteRow = 2;   // row 3 (index 2)
+    spriteIndex = 1; // column 2 (index 1)
   }
 
   source.x = spriteIndex * SPRITE_SRC_WIDTH;
   source.y = spriteRow * SPRITE_SRC_HEIGHT;
   dest.x = screenX;
-  dest.y = screenY - dest.h;  // Use scaled height
+  dest.y = screenY - dest.h; // use scaled height to position correctly
   SDL_BlitScaled(spritemap, &source, screen, &dest);
 }
 
@@ -521,7 +472,7 @@ void UpdateAttackState(GameState *game, double delta) {
     }
   }
 
-  // Clean expired inputs from buffer
+  // clean expired inputs from buffer
   CleanInputBuffer(game);
 }
 
@@ -529,7 +480,7 @@ void StartLightAttack(GameState *game) {
   AddInput(game, INPUT_LIGHT);
   CheckCombos(game);
 
-  // If no combo was triggered, do basic attack
+  // if no combo was triggered, do basic attack
   if (game->state == STATE_IDLE) {
     game->state = STATE_CROUCH_DEFENSE;
     game->attackTimer = CROUCH_DEFENSE_DURATION;
@@ -541,7 +492,7 @@ void StartHeavyAttack(GameState *game) {
   AddInput(game, INPUT_HEAVY);
   CheckCombos(game);
 
-  // If no combo was triggered, do basic attack
+  // if no combo was triggered, do basic attack
   if (game->state == STATE_IDLE) {
     game->state = STATE_HEAVY_ATTACK;
     game->attackTimer = HEAVY_ATTACK_DURATION;
@@ -592,8 +543,7 @@ int main(int argc, char **argv) {
     printf("SDL_Init error: %s\n", SDL_GetError());
     return 1;
   }
-  
-  // Initialize random seed for floor generation
+
   srand(time(NULL));
 
   int rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0, &window,
@@ -629,27 +579,27 @@ int main(int argc, char **argv) {
   spritemap = SDL_LoadBMP("./player_sprite.bmp");
   if (spritemap == NULL) {
     printf("SDL_LoadBMP(player_sprite.bmp) error: %s\n", SDL_GetError());
-    CleanupSDL(charset, NULL, NULL, NULL, screen, screenTexture, renderer, window);
+    CleanupSDL(charset, NULL, NULL, NULL, screen, screenTexture, renderer,
+               window);
     return 1;
   }
   SDL_SetColorKey(spritemap, true, 0x000000);
-  
-  // Load cloud texture
+
   cloudTexture = SDL_LoadBMP("./texture_clouds.bmp");
   if (cloudTexture == NULL) {
-    printf("Warning: SDL_LoadBMP(texture_clouds.bmp) error: %s\n", SDL_GetError());
+    printf("Warning: SDL_LoadBMP(texture_clouds.bmp) error: %s\n",
+           SDL_GetError());
     printf("Continuing without cloud texture...\n");
   }
-  
-  // Load floor texture
+
   floorTexture = SDL_LoadBMP("./texture_floor.bmp");
   if (floorTexture == NULL) {
-    printf("Warning: SDL_LoadBMP(texture_floor.bmp) error: %s\n", SDL_GetError());
+    printf("Warning: SDL_LoadBMP(texture_floor.bmp) error: %s\n",
+           SDL_GetError());
     printf("Continuing without floor texture...\n");
   }
 
   Uint32 black = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
-  Uint32 brown = SDL_MapRGB(screen->format, 0x8B, 0x4F, 0x2A);
 
   InitGame(&game);
 
@@ -758,6 +708,7 @@ int main(int argc, char **argv) {
     frames++;
   }
 
-  CleanupSDL(charset, spritemap, cloudTexture, floorTexture, screen, screenTexture, renderer, window);
+  CleanupSDL(charset, spritemap, cloudTexture, floorTexture, screen,
+             screenTexture, renderer, window);
   return 0;
 }
