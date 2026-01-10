@@ -24,19 +24,23 @@ extern "C" {
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
                 SDL_Surface *charset) {
   SDL_Rect source, dest;
-  source.w = 8;
-  source.h = 8;
-  dest.w = 8;
-  dest.h = 8;
+  source.w = 24;
+  source.h = 24;
+  dest.w = 24;
+  dest.h = 24;
   
   while (*text) {
     int character = *text & 255;
-    source.x = (character % 16) * 8;
-    source.y = (character / 16) * 8;
-    dest.x = x;
-    dest.y = y;
-    SDL_BlitSurface(charset, &source, screen, &dest);
-    x += 8;
+    // Font grid starts at character 32 (first two rows missing)
+    if (character >= 32) {
+      character -= 32;
+      source.x = (character % 16) * 24;
+      source.y = (character / 16) * 24;
+      dest.x = x;
+      dest.y = y;
+      SDL_BlitSurface(charset, &source, screen, &dest);
+    }
+    x += 24;
     text++;
   }
 }
@@ -150,17 +154,17 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
              double fps, Uint32 red, Uint32 blue) {
   char text[128];
 
-  DrawRectangle(screen, 4, 4, SCREEN_WIDTH - 8, 56, red, blue);
+  DrawRectangle(screen, 4, 4, SCREEN_WIDTH - 8, 80, red, blue);
 
   sprintf(text, "Beat 'em Up Game");
-  DrawString(screen, screen->w / 2 - strlen(text) * 8 / 2, 10, text, charset);
+  DrawString(screen, screen->w / 2 - strlen(text) * 24 / 2, 10, text, charset);
 
   sprintf(text, "Time: %.1lf s | Position: (%.0lf, %.0lf) | FPS: %.0lf",
           game->worldTime, game->playerX, game->playerY, fps);
-  DrawString(screen, 12, 26, text, charset);
+  DrawString(screen, 12, 36, text, charset);
 
   sprintf(text, "ESC-exit | N-new game | WSAD-move");
-  DrawString(screen, 12, 42, text, charset);
+  DrawString(screen, 12, 60, text, charset);
 }
 
 void UpdatePlayerPosition(GameState *game, double delta) {
@@ -252,9 +256,9 @@ extern "C"
 
   SDL_ShowCursor(SDL_DISABLE);
 
-  charset = SDL_LoadBMP("./cs8x8.bmp");
+  charset = SDL_LoadBMP("./vcr_osd_mono.bmp");
   if (charset == NULL) {
-    printf("SDL_LoadBMP(cs8x8.bmp) error: %s\n", SDL_GetError());
+    printf("SDL_LoadBMP(vcr_osd_mono.bmp) error: %s\n", SDL_GetError());
     CleanupSDL(NULL, screen, screenTexture, renderer, window);
     return 1;
   }
@@ -297,11 +301,11 @@ extern "C"
       DrawRectangle(screen, SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50, 300,
                     100, red, blue);
       sprintf(text, "Press 'N' to start");
-      DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 8 / 2,
+      DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 24 / 2,
                  SCREEN_HEIGHT / 2 - 10, text, charset);
       sprintf(text, "ESC to exit");
-      DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 8 / 2,
-                 SCREEN_HEIGHT / 2 + 10, text, charset);
+      DrawString(screen, SCREEN_WIDTH / 2 - strlen(text) * 24 / 2,
+                 SCREEN_HEIGHT / 2 + 20, text, charset);
     }
 
     fpsTimer += delta;
