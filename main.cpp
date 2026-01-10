@@ -535,6 +535,42 @@ void UpdateCamera(GameState *game, double delta) {
   game->cameraX += cameraDiff * CAMERA_SMOOTH_FACTOR * delta;
 }
 
+void HandleMovementKeyDown(GameState *game, SDL_Keycode key, bool repeat) {
+  int keyIndex = -1;
+  int *moveFlag = NULL;
+  
+  if (key == SDLK_a) { keyIndex = 1; moveFlag = &game->moveLeft; }
+  else if (key == SDLK_d) { keyIndex = 3; moveFlag = &game->moveRight; }
+  else if (key == SDLK_w) { keyIndex = 0; moveFlag = &game->moveUp; }
+  else if (key == SDLK_s) { keyIndex = 2; moveFlag = &game->moveDown; }
+  
+  if (moveFlag) {
+    if (!repeat) {
+      game->keyPressTime[keyIndex] = game->worldTime;
+    }
+    *moveFlag = 1;
+  }
+}
+
+void HandleMovementKeyUp(GameState *game, SDL_Keycode key) {
+  int keyIndex = -1;
+  int *moveFlag = NULL;
+  InputType inputType = INPUT_NONE;
+  
+  if (key == SDLK_a) { keyIndex = 1; moveFlag = &game->moveLeft; inputType = INPUT_LEFT; }
+  else if (key == SDLK_d) { keyIndex = 3; moveFlag = &game->moveRight; inputType = INPUT_RIGHT; }
+  else if (key == SDLK_w) { keyIndex = 0; moveFlag = &game->moveUp; inputType = INPUT_UP; }
+  else if (key == SDLK_s) { keyIndex = 2; moveFlag = &game->moveDown; inputType = INPUT_DOWN; }
+  
+  if (moveFlag) {
+    *moveFlag = 0;
+    if (game->worldTime - game->keyPressTime[keyIndex] < DASH_TAP_THRESHOLD) {
+      AddInput(game, inputType);
+      CheckCombos(game);
+    }
+  }
+}
+
 void HandleEvents(GameState *game, int *quit) {
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
@@ -546,57 +582,15 @@ void HandleEvents(GameState *game, int *quit) {
         InitGame(game);
       else if (event.key.keysym.sym == SDLK_b)
         game->debugMenuEnabled = !game->debugMenuEnabled;
-      else if (event.key.keysym.sym == SDLK_a) {
-        if (!event.key.repeat) {
-          game->keyPressTime[1] = game->worldTime;
-        }
-        game->moveLeft = 1;
-      } else if (event.key.keysym.sym == SDLK_d) {
-        if (!event.key.repeat) {
-          game->keyPressTime[3] = game->worldTime;
-        }
-        game->moveRight = 1;
-      } else if (event.key.keysym.sym == SDLK_w) {
-        if (!event.key.repeat) {
-          game->keyPressTime[0] = game->worldTime;
-        }
-        game->moveUp = 1;
-      } else if (event.key.keysym.sym == SDLK_s) {
-        if (!event.key.repeat) {
-          game->keyPressTime[2] = game->worldTime;
-        }
-        game->moveDown = 1;
-      } else if (event.key.keysym.sym == SDLK_r)
+      else if (event.key.keysym.sym == SDLK_r)
         StartLightAttack(game);
       else if (event.key.keysym.sym == SDLK_f)
         StartHeavyAttack(game);
+      else
+        HandleMovementKeyDown(game, event.key.keysym.sym, event.key.repeat);
       break;
     case SDL_KEYUP:
-      if (event.key.keysym.sym == SDLK_a) {
-        game->moveLeft = 0;
-        if (game->worldTime - game->keyPressTime[1] < DASH_TAP_THRESHOLD) {
-          AddInput(game, INPUT_LEFT);
-          CheckCombos(game);
-        }
-      } else if (event.key.keysym.sym == SDLK_d) {
-        game->moveRight = 0;
-        if (game->worldTime - game->keyPressTime[3] < DASH_TAP_THRESHOLD) {
-          AddInput(game, INPUT_RIGHT);
-          CheckCombos(game);
-        }
-      } else if (event.key.keysym.sym == SDLK_w) {
-        game->moveUp = 0;
-        if (game->worldTime - game->keyPressTime[0] < DASH_TAP_THRESHOLD) {
-          AddInput(game, INPUT_UP);
-          CheckCombos(game);
-        }
-      } else if (event.key.keysym.sym == SDLK_s) {
-        game->moveDown = 0;
-        if (game->worldTime - game->keyPressTime[2] < DASH_TAP_THRESHOLD) {
-          AddInput(game, INPUT_DOWN);
-          CheckCombos(game);
-        }
-      }
+      HandleMovementKeyUp(game, event.key.keysym.sym);
       break;
     case SDL_QUIT:
       *quit = 1;
