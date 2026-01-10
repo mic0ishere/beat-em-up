@@ -21,33 +21,41 @@ extern "C" {
 #define PLAYER_SPEED 150.0
 #define CAMERA_SMOOTH_FACTOR 5.0
 
+#define FONT_SIZE 10
+#define FONT_SRC_WIDTH 20
+#define FONT_SRC_HEIGHT 26
+
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
                 SDL_Surface *charset) {
+
   SDL_Rect source, dest;
-  source.w = 24;
-  source.h = 24;
-  dest.w = 12;
-  dest.h = 12;
-  
+  source.w = FONT_SRC_WIDTH;
+  source.h = 26;
+  dest.w = FONT_SIZE;
+  dest.h = FONT_SIZE;
+
   while (*text) {
-    int character = *text & 255;
-    // Font grid starts at character 32 (first two rows missing)
-    if (character >= 32) {
-      character -= 32;
-      source.x = (character % 16) * 24;
-      source.y = (character / 16) * 24;
-      dest.x = x;
-      dest.y = y;
-      SDL_BlitScaled(charset, &source, screen, &dest);
+    int character = (*text & 255) - 32;
+
+    // clamp characters to bitmap range (32-127)
+    if (character < 0 || character >= 96) {
+      character = 31; // replace unknown characters with '?'
     }
-    x += 12;
+
+    source.x = (character % 16) * FONT_SRC_WIDTH;
+    source.y = (character / 16) * FONT_SRC_HEIGHT;
+    dest.x = x;
+    dest.y = y;
+    SDL_BlitScaled(charset, &source, screen, &dest);
+    x += FONT_SIZE;
     text++;
   }
 }
 
 void DrawPixel(SDL_Surface *surface, int x, int y, Uint32 color) {
   int bytesPerPixel = surface->format->BytesPerPixel;
-  Uint8 *pixel = (Uint8 *)surface->pixels + y * surface->pitch + x * bytesPerPixel;
+  Uint8 *pixel =
+      (Uint8 *)surface->pixels + y * surface->pitch + x * bytesPerPixel;
   *(Uint32 *)pixel = color;
 }
 void DrawLine(SDL_Surface *screen, int x, int y, int length, int dx, int dy,
@@ -65,7 +73,7 @@ void DrawRectangle(SDL_Surface *screen, int x, int y, int width, int height,
   DrawLine(screen, x + width - 1, y, height, 0, 1, outlineColor);
   DrawLine(screen, x, y, width, 1, 0, outlineColor);
   DrawLine(screen, x, y + height - 1, width, 1, 0, outlineColor);
-  
+
   for (int i = y + 1; i < y + height - 1; i++) {
     DrawLine(screen, x + 1, i, width - 2, 1, 0, fillColor);
   }
@@ -117,12 +125,12 @@ void DrawFloorGrid(SDL_Surface *screen, double cameraX, Uint32 gray) {
 void DrawStageBoundaries(SDL_Surface *screen, double cameraX, Uint32 black) {
   int leftBound = 0 - (int)cameraX;
   int rightBound = STAGE_WIDTH - (int)cameraX;
-  
+
   if (leftBound >= 0 && leftBound < SCREEN_WIDTH) {
     DrawLine(screen, leftBound, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
     DrawLine(screen, leftBound + 1, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
   }
-  
+
   if (rightBound >= 0 && rightBound < SCREEN_WIDTH) {
     DrawLine(screen, rightBound, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
     DrawLine(screen, rightBound - 1, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
@@ -169,7 +177,7 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
 
 void UpdatePlayerPosition(GameState *game, double delta) {
   double dx = 0, dy = 0;
-  
+
   if (game->moveLeft)
     dx -= PLAYER_SPEED * delta;
   if (game->moveRight)
@@ -194,7 +202,7 @@ void UpdatePlayerPosition(GameState *game, double delta) {
 
 void UpdateCamera(GameState *game, double delta) {
   double targetCameraX = game->playerX - SCREEN_WIDTH / 2;
-  
+
   if (targetCameraX < 0)
     targetCameraX = 0;
   if (targetCameraX > STAGE_WIDTH - SCREEN_WIDTH)
@@ -225,7 +233,7 @@ extern "C"
   SDL_Window *window;
   SDL_Renderer *renderer;
   GameState game;
-  
+
   int timeNow, timeLast, quit, frames;
   double delta, fpsTimer, fps;
 
@@ -235,7 +243,7 @@ extern "C"
   }
 
   int rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0, &window,
-                                        &renderer);
+                                       &renderer);
   if (rc != 0) {
     SDL_Quit();
     printf("SDL_CreateWindowAndRenderer error: %s\n", SDL_GetError());
