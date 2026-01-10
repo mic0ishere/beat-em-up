@@ -14,10 +14,9 @@ extern "C" {
 
 #define SCREEN_WIDTH 640
 #define SCREEN_HEIGHT 480
-#define STAGE_WIDTH 2400
+#define STAGE_WIDTH 1280
 #define STAGE_HEIGHT 480
-#define FLOOR_Y 350
-#define FLOOR_HEIGHT 130
+#define FLOOR_HEIGHT 140
 #define PLAYER_SPEED 150.0
 #define CAMERA_SMOOTH_FACTOR 5.0
 
@@ -53,22 +52,6 @@ void DrawString(SDL_Surface *screen, int x, int y, const char *text,
     x += FONT_SIZE;
     text++;
   }
-}
-
-void DrawPlayerSprite(SDL_Surface *screen, int x, int y,
-                      SDL_Surface *spritemap) {
-
-  SDL_Rect source, dest;
-  source.w = SPRITE_WIDTH;
-  source.h = SPRITE_HEIGHT;
-  dest.w = SPRITE_WIDTH;
-  dest.h = SPRITE_HEIGHT;
-
-  source.x = 0;
-  source.y = 0;
-  dest.x = x;
-  dest.y = y;
-  SDL_BlitScaled(spritemap, &source, screen, &dest);
 }
 
 void DrawPixel(SDL_Surface *surface, int x, int y, Uint32 color) {
@@ -107,7 +90,7 @@ struct GameState {
 
 void InitGame(GameState *game) {
   game->playerX = 100;
-  game->playerY = FLOOR_Y;
+  game->playerY = 0;
   game->cameraX = 0;
   game->worldTime = 0;
   game->moveLeft = 0;
@@ -117,40 +100,17 @@ void InitGame(GameState *game) {
 }
 
 void DrawSkyGradient(SDL_Surface *screen) {
-  for (int y = 0; y < FLOOR_Y; y++) {
-    int blue = 0x33 + (0x88 - 0x33) * y / FLOOR_Y;
+  for (int y = 0; y < STAGE_HEIGHT - FLOOR_HEIGHT; y++) {
+    // todo: improve gradient calculation
+    int blue = 0x33 + (0x88 - 0x33) * y / STAGE_HEIGHT - FLOOR_HEIGHT;
     Uint32 skyColor = SDL_MapRGB(screen->format, 0x66, 0x99, blue);
     DrawLine(screen, 0, y, SCREEN_WIDTH, 1, 0, skyColor);
   }
 }
 
 void DrawFloor(SDL_Surface *screen, Uint32 brown) {
-  for (int y = FLOOR_Y; y < SCREEN_HEIGHT; y++) {
+  for (int y = STAGE_HEIGHT - FLOOR_HEIGHT; y < SCREEN_HEIGHT; y++) {
     DrawLine(screen, 0, y, SCREEN_WIDTH, 1, 0, brown);
-  }
-}
-
-void DrawFloorGrid(SDL_Surface *screen, double cameraX, Uint32 gray) {
-  for (int x = 0; x < STAGE_WIDTH; x += 50) {
-    int screenX = x - (int)cameraX;
-    if (screenX >= -50 && screenX < SCREEN_WIDTH + 50) {
-      DrawLine(screen, screenX, FLOOR_Y, FLOOR_HEIGHT, 0, 1, gray);
-    }
-  }
-}
-
-void DrawStageBoundaries(SDL_Surface *screen, double cameraX, Uint32 black) {
-  int leftBound = 0 - (int)cameraX;
-  int rightBound = STAGE_WIDTH - (int)cameraX;
-
-  if (leftBound >= 0 && leftBound < SCREEN_WIDTH) {
-    DrawLine(screen, leftBound, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
-    DrawLine(screen, leftBound + 1, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
-  }
-
-  if (rightBound >= 0 && rightBound < SCREEN_WIDTH) {
-    DrawLine(screen, rightBound, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
-    DrawLine(screen, rightBound - 1, FLOOR_Y, FLOOR_HEIGHT, 0, 1, black);
   }
 }
 
@@ -158,8 +118,6 @@ void DrawStage(SDL_Surface *screen, double cameraX, Uint32 black, Uint32 gray,
                Uint32 brown) {
   DrawSkyGradient(screen);
   DrawFloor(screen, brown);
-  DrawFloorGrid(screen, cameraX, gray);
-  DrawStageBoundaries(screen, cameraX, black);
 }
 
 void DrawPlayer(SDL_Surface *screen, double playerX, double playerY,
@@ -167,14 +125,17 @@ void DrawPlayer(SDL_Surface *screen, double playerX, double playerY,
   int screenX = (int)(playerX - cameraX);
   int screenY = (int)playerY;
 
-  // DrawRectangle(screen, screenX - 10, screenY - 30, 20, 30, black, red);
-  // DrawRectangle(screen, screenX - 8, screenY - 45, 16, 15, black, green);
-  // DrawRectangle(screen, screenX - 15, screenY - 25, 5, 15, black, red);
-  // DrawRectangle(screen, screenX + 10, screenY - 25, 5, 15, black, red);
-  // DrawRectangle(screen, screenX - 8, screenY, 6, 10, black, red);
-  // DrawRectangle(screen, screenX + 2, screenY, 6, 10, black, red);
-  DrawPlayerSprite(screen, screenX - SPRITE_WIDTH / 2, screenY - SPRITE_HEIGHT,
-                   spritemap);
+  SDL_Rect source, dest;
+  source.w = SPRITE_WIDTH;
+  source.h = SPRITE_HEIGHT;
+  dest.w = SPRITE_WIDTH;
+  dest.h = SPRITE_HEIGHT;
+
+  source.x = 0;
+  source.y = 0;
+  dest.x = screenX;
+  dest.y = screenY - SPRITE_HEIGHT;
+  SDL_BlitScaled(spritemap, &source, screen, &dest);
 }
 
 void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
@@ -209,14 +170,14 @@ void UpdatePlayerPosition(GameState *game, double delta) {
   game->playerX += dx;
   game->playerY += dy;
 
-  if (game->playerX < 20)
-    game->playerX = 20;
-  if (game->playerX > STAGE_WIDTH - 20)
-    game->playerX = STAGE_WIDTH - 20;
-  if (game->playerY < FLOOR_Y)
-    game->playerY = FLOOR_Y;
-  if (game->playerY > SCREEN_HEIGHT - 20)
-    game->playerY = SCREEN_HEIGHT - 20;
+  if (game->playerX < 0)
+    game->playerX = 0;
+  if (game->playerX > STAGE_WIDTH - SPRITE_WIDTH)
+    game->playerX = STAGE_WIDTH - SPRITE_WIDTH;
+  if (game->playerY < STAGE_HEIGHT - FLOOR_HEIGHT + 5)
+    game->playerY = STAGE_HEIGHT - FLOOR_HEIGHT + 5;
+  if (game->playerY > SCREEN_HEIGHT)
+    game->playerY = SCREEN_HEIGHT;
 }
 
 void UpdateCamera(GameState *game, double delta) {
@@ -231,10 +192,13 @@ void UpdateCamera(GameState *game, double delta) {
   game->cameraX += cameraDiff * CAMERA_SMOOTH_FACTOR * delta;
 }
 
-void CleanupSDL(SDL_Surface *charset, SDL_Surface *screen, SDL_Texture *texture,
+void CleanupSDL(SDL_Surface *charset, SDL_Surface *spritemap,
+                SDL_Surface *screen, SDL_Texture *texture,
                 SDL_Renderer *renderer, SDL_Window *window) {
   if (charset)
     SDL_FreeSurface(charset);
+  if (spritemap)
+    SDL_FreeSurface(spritemap);
   SDL_FreeSurface(screen);
   SDL_DestroyTexture(texture);
   SDL_DestroyRenderer(renderer);
@@ -249,9 +213,6 @@ int main(int argc, char **argv) {
   SDL_Window *window;
   SDL_Renderer *renderer;
   GameState game;
-
-  int timeNow, timeLast, quit, frames;
-  double delta, fpsTimer, fps;
 
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
     printf("SDL_Init error: %s\n", SDL_GetError());
@@ -283,7 +244,7 @@ int main(int argc, char **argv) {
   charset = SDL_LoadBMP("./vcr_osd_mono.bmp");
   if (charset == NULL) {
     printf("SDL_LoadBMP(vcr_osd_mono.bmp) error: %s\n", SDL_GetError());
-    CleanupSDL(NULL, screen, screenTexture, renderer, window);
+    CleanupSDL(NULL, NULL, screen, screenTexture, renderer, window);
     return 1;
   }
   SDL_SetColorKey(charset, true, 0x000000);
@@ -291,7 +252,7 @@ int main(int argc, char **argv) {
   spritemap = SDL_LoadBMP("./player_sprite.bmp");
   if (spritemap == NULL) {
     printf("SDL_LoadBMP(player_sprite.bmp) error: %s\n", SDL_GetError());
-    CleanupSDL(charset, screen, screenTexture, renderer, window);
+    CleanupSDL(charset, NULL, screen, screenTexture, renderer, window);
     return 1;
   }
   SDL_SetColorKey(spritemap, true, 0x000000);
@@ -305,15 +266,16 @@ int main(int argc, char **argv) {
 
   InitGame(&game);
 
-  timeLast = SDL_GetTicks();
-  frames = 0;
-  fpsTimer = 0;
-  fps = 0;
-  quit = 0;
+  int timeLast = SDL_GetTicks();
+  int timeNow = 0;
+  int frames = 0;
+  int quit = 0;
+  double fpsTimer = 0;
+  double fps = 0;
 
   while (!quit) {
     timeNow = SDL_GetTicks();
-    delta = (timeNow - timeLast) * 0.001;
+    double delta = (timeNow - timeLast) * 0.001;
     timeLast = timeNow;
 
     game.worldTime += delta;
@@ -372,6 +334,6 @@ int main(int argc, char **argv) {
     frames++;
   }
 
-  CleanupSDL(charset, screen, screenTexture, renderer, window);
+  CleanupSDL(charset, spritemap, screen, screenTexture, renderer, window);
   return 0;
 }
