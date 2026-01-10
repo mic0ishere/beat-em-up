@@ -27,6 +27,19 @@ extern "C" {
 #define SPRITE_WIDTH 46
 #define SPRITE_HEIGHT 50
 
+// Animation constants
+#define LIGHT_ATTACK_FRAMES 15
+#define HEAVY_ATTACK_FRAMES 30
+#define LIGHT_ATTACK_DURATION 0.3
+#define HEAVY_ATTACK_DURATION 0.6
+
+// Player states
+enum PlayerState {
+  STATE_IDLE = 0,
+  STATE_LIGHT_ATTACK = 1,
+  STATE_HEAVY_ATTACK = 2
+};
+
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
                 SDL_Surface *charset) {
 
@@ -86,6 +99,9 @@ struct GameState {
   double cameraX;
   double worldTime;
   int moveLeft, moveRight, moveUp, moveDown;
+  PlayerState state;
+  double attackTimer;
+  int animationFrame;
 };
 
 void InitGame(GameState *game) {
@@ -97,6 +113,9 @@ void InitGame(GameState *game) {
   game->moveRight = 0;
   game->moveUp = 0;
   game->moveDown = 0;
+  game->state = STATE_IDLE;
+  game->attackTimer = 0;
+  game->animationFrame = 0;
 }
 
 void DrawSkyGradient(SDL_Surface *screen) {
@@ -121,7 +140,7 @@ void DrawStage(SDL_Surface *screen, double cameraX, Uint32 black,
 }
 
 void DrawPlayer(SDL_Surface *screen, double playerX, double playerY,
-                double cameraX, SDL_Surface *spritemap) {
+                double cameraX, SDL_Surface *spritemap, PlayerState state) {
   int screenX = (int)(playerX - cameraX);
   int screenY = (int)playerY;
 
@@ -131,7 +150,20 @@ void DrawPlayer(SDL_Surface *screen, double playerX, double playerY,
   dest.w = SPRITE_WIDTH;
   dest.h = SPRITE_HEIGHT;
 
-  source.x = 0;
+  // Select sprite based on state
+  // First row sprites: standing(0) | attack_crouch(1) | attack_fist_defense(2) | 
+  // hand_long_attack(3) | stomach_attack(4) | stomach_attack_prepare(5) | 
+  // jump_forward(6) | jump_landing(7)
+  int spriteIndex = 0;
+  if (state == STATE_LIGHT_ATTACK) {
+    spriteIndex = 3; // hand_long_attack for light attack
+  } else if (state == STATE_HEAVY_ATTACK) {
+    spriteIndex = 4; // stomach_attack for heavy attack
+  } else {
+    spriteIndex = 0; // standing idle
+  }
+
+  source.x = spriteIndex * SPRITE_WIDTH;
   source.y = 0;
   dest.x = screenX;
   dest.y = screenY - SPRITE_HEIGHT;
@@ -151,24 +183,27 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
           game->worldTime, game->playerX, SCREEN_HEIGHT - game->playerY, fps);
   DrawString(screen, 16, 26, text, charset);
 
-  sprintf(text, "exit [ESC] | new game [N] | move [WSAD]");
+  sprintf(text, "exit [ESC] | new game [N] | move [WSAD] | light attack [X] | heavy attack [Y]");
   DrawString(screen, 16, 40, text, charset);
 }
 
 void UpdatePlayerPosition(GameState *game, double delta) {
   double dx = 0, dy = 0;
 
-  if (game->moveLeft)
-    dx -= PLAYER_SPEED * delta;
-  if (game->moveRight)
-    dx += PLAYER_SPEED * delta;
-  if (game->moveUp)
-    dy -= PLAYER_SPEED * delta;
-  if (game->moveDown)
-    dy += PLAYER_SPEED * delta;
+  // Don't allow movement during attacks
+  if (game->state == STATE_IDLE) {
+    if (game->moveLeft)
+      dx -= PLAYER_SPEED * delta;
+    if (game->moveRight)
+      dx += PLAYER_SPEED * delta;
+    if (game->moveUp)
+      dy -= PLAYER_SPEED * delta;
+    if (game->moveDown)
+      dy += PLAYER_SPEED * delta;
 
-  game->playerX += dx;
-  game->playerY += dy;
+    game->playerX += dx;
+    game->playerY += dy;
+  }
 
   if (game->playerX < 0)
     game->playerX = 0;
@@ -178,6 +213,47 @@ void UpdatePlayerPosition(GameState *game, double delta) {
     game->playerY = STAGE_HEIGHT - FLOOR_HEIGHT + 5;
   if (game->playerY > SCREEN_HEIGHT)
     game->playerY = SCREEN_HEIGHT;
+}
+
+void UpdateAttackState(GameState *game, double delta) {
+  if (game->state != STATE_IDLE) {
+    game->attackTimer += delta;
+    
+    double attackDuration = 0;
+    int totalFrames = 0;
+    
+    if (game->state == STATE_LIGHT_ATTACK) {
+      attackDuration = LIGHT_ATTACK_DURATION;
+      totalFrames = LIGHT_ATTACK_FRAMES;
+    } else if (game->state == STATE_HEAVY_ATTACK) {
+      attackDuration = HEAVY_ATTACK_DURATION;
+      totalFrames = HEAVY_ATTACK_FRAMES;
+    }
+    
+    game->animationFrame = (int)(game->attackTimer / attackDuration * totalFrames);
+    
+    if (game->attackTimer >= attackDuration) {
+      game->state = STATE_IDLE;
+      game->attackTimer = 0;
+      game->animationFrame = 0;
+    }
+  }
+}
+
+void StartLightAttack(GameState *game) {
+  if (game->state == STATE_IDLE) {
+    game->state = STATE_LIGHT_ATTACK;
+    game->attackTimer = 0;
+    game->animationFrame = 0;
+  }
+}
+
+void StartHeavyAttack(GameState *game) {
+  if (game->state == STATE_IDLE) {
+    game->state = STATE_HEAVY_ATTACK;
+    game->attackTimer = 0;
+    game->animationFrame = 0;
+  }
 }
 
 void UpdateCamera(GameState *game, double delta) {
@@ -276,12 +352,13 @@ int main(int argc, char **argv) {
 
     game.worldTime += delta;
     UpdatePlayerPosition(&game, delta);
+    UpdateAttackState(&game, delta);
     UpdateCamera(&game, delta);
 
     SDL_FillRect(screen, NULL, black);
 
     DrawStage(screen, game.cameraX, black, brown);
-    DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, spritemap);
+    DrawPlayer(screen, game.playerX, game.playerY, game.cameraX, spritemap, game.state);
 
     fpsTimer += delta;
     if (fpsTimer > 0.5) {
@@ -311,6 +388,10 @@ int main(int argc, char **argv) {
           game.moveUp = 1;
         else if (event.key.keysym.sym == SDLK_s)
           game.moveDown = 1;
+        else if (event.key.keysym.sym == SDLK_x)
+          StartLightAttack(&game);
+        else if (event.key.keysym.sym == SDLK_y)
+          StartHeavyAttack(&game);
         break;
       case SDL_KEYUP:
         if (event.key.keysym.sym == SDLK_a)
