@@ -186,24 +186,13 @@ void DrawPixel(SDL_Surface *surface, int x, int y, Uint32 color) {
       (Uint8 *)surface->pixels + y * surface->pitch + x * bytesPerPixel;
   *(Uint32 *)pixel = color;
 }
-void DrawLine(SDL_Surface *screen, int x, int y, int length, int dx, int dy,
-              Uint32 color) {
-  for (int i = 0; i < length; i++) {
-    DrawPixel(screen, x, y, color);
-    x += dx;
-    y += dy;
-  }
-}
 
-void DrawRectangle(SDL_Surface *screen, int x, int y, int width, int height,
-                   Uint32 outlineColor, Uint32 fillColor) {
-  DrawLine(screen, x, y, height, 0, 1, outlineColor);
-  DrawLine(screen, x + width - 1, y, height, 0, 1, outlineColor);
-  DrawLine(screen, x, y, width, 1, 0, outlineColor);
-  DrawLine(screen, x, y + height - 1, width, 1, 0, outlineColor);
-
-  for (int i = y + 1; i < y + height - 1; i++) {
-    DrawLine(screen, x + 1, i, width - 2, 1, 0, fillColor);
+void DrawBox(SDL_Surface *screen, int x, int y, int width, int height,
+             Uint32 fillColor) {
+  for (int i = 0; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+      DrawPixel(screen, x + j, y + i, fillColor);
+    }
   }
 }
 
@@ -291,10 +280,7 @@ void CheckCombos(GameState *game) {
 
 void DrawStage(SDL_Surface *screen, double cameraX, SDL_Surface *cloudTexture,
                SDL_Surface *floorTexture, GameState *game) {
-  // horizontal offset for parallax effect (clouds move slower than camera)
-  int cloudOffsetX = (int)(cameraX * 0.3) % CLOUD_TEXTURE_WIDTH;
-
-  for (int x = -cloudOffsetX; x < SCREEN_WIDTH; x += CLOUD_TEXTURE_WIDTH) {
+  for (int x = 0; x < SCREEN_WIDTH; x += CLOUD_TEXTURE_WIDTH) {
     for (int y = 0; y < SKY_HEIGHT; y += CLOUD_TEXTURE_HEIGHT) {
       SDL_Rect dest;
       dest.x = x;
@@ -315,8 +301,8 @@ void DrawStage(SDL_Surface *screen, double cameraX, SDL_Surface *cloudTexture,
   sourceTile.w = FLOOR_TILE_SIZE;
   sourceTile.h = FLOOR_TILE_SIZE;
 
-  for (int tileY = 0; tileY < FLOOR_TILES_VERTICAL; tileY++) {
-    for (int tileX = startTileX; tileX < endTileX; tileX++) {
+  for (int tileX = startTileX; tileX < endTileX; tileX++) {
+    for (int tileY = 0; tileY < FLOOR_TILES_VERTICAL; tileY++) {
       SDL_Rect dest;
       dest.x = (int)(tileX * FLOOR_TILE_SIZE - cameraX);
       dest.y = SKY_HEIGHT + tileY * FLOOR_TILE_SIZE;
@@ -375,9 +361,10 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
 }
 
 void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
-                   Uint32 outlineColor, Uint32 fillColor) {
-  DrawRectangle(screen, 8, DEBUG_MENU_START, SCREEN_WIDTH - 16, 48,
-                outlineColor, fillColor);
+                   Uint32 fillColor) {
+  const int DEBUG_MENU_START = 80;
+
+  DrawBox(screen, 8, DEBUG_MENU_START, SCREEN_WIDTH - 16, 48, fillColor);
 
   char text[128];
   snprintf(text, sizeof(text), "DEBUG MENU - Current Action: %s",
@@ -401,11 +388,10 @@ void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
 }
 
 void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
-             double fps, Uint32 outlineColor, Uint32 fillColor) {
+             double fps, Uint32 fillColor) {
+  DrawBox(screen, 8, 8, SCREEN_WIDTH - 16, 66, fillColor);
+
   char text[128];
-
-  DrawRectangle(screen, 8, 8, SCREEN_WIDTH - 16, 50, outlineColor, fillColor);
-
   snprintf(text, sizeof(text), "BEAT 'EM UP GAME");
   DrawString(screen, screen->w / 2 - strlen(text) * 12 / 2, 12, text, charset);
 
@@ -415,9 +401,13 @@ void DrawHUD(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
   DrawString(screen, 16, 26, text, charset);
 
   snprintf(text, sizeof(text),
+           "implemented requirements: mandatory 1-4, optional A-B");
+  DrawString(screen, 16, 40, text, charset);
+
+  snprintf(text, sizeof(text),
            "exit [ESC] | new game [N] | move [WSAD] | crouch [R] | heavy "
            "attack [F] | debug menu [B]");
-  DrawString(screen, 16, 40, text, charset);
+  DrawString(screen, 16, 54, text, charset);
 }
 
 void UpdatePlayerPosition(GameState *game, double delta) {
@@ -556,6 +546,18 @@ void HandleEvents(GameState *game, int *quit) {
   }
 }
 
+void UpdateCamera(GameState *game, double delta) {
+  double targetCameraX = game->playerX - SCREEN_WIDTH / 2;
+
+  if (targetCameraX < 0)
+    targetCameraX = 0;
+  if (targetCameraX > STAGE_WIDTH - SCREEN_WIDTH)
+    targetCameraX = STAGE_WIDTH - SCREEN_WIDTH;
+
+  double cameraDiff = targetCameraX - game->cameraX;
+  game->cameraX += cameraDiff * CAMERA_SMOOTH_FACTOR * delta;
+}
+
 void RenderFrame(SDLResources *res, GameState *game, double fps) {
   Uint32 black = SDL_MapRGB(res->screen->format, 0x00, 0x00, 0x00);
 
@@ -564,10 +566,10 @@ void RenderFrame(SDLResources *res, GameState *game, double fps) {
   DrawStage(res->screen, game->cameraX, res->cloudTexture, res->floorTexture,
             game);
   DrawPlayer(res->screen, res->spritemap, game);
-  DrawHUD(res->screen, res->charset, game, fps, black, black);
+  DrawHUD(res->screen, res->charset, game, fps, black);
 
   if (game->debugMenuEnabled) {
-    DrawDebugMenu(res->screen, res->charset, game, black, black);
+    DrawDebugMenu(res->screen, res->charset, game, black);
   }
 
   SDL_UpdateTexture(res->screenTexture, NULL, res->screen->pixels,
