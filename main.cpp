@@ -38,9 +38,9 @@ extern "C" {
   ((int)(SPRITE_SRC_HEIGHT * ((double)SPRITE_WIDTH / SPRITE_SRC_WIDTH)))
 
 // input buffer parameters
-#define INPUT_BUFFER_SIZE 10
-#define INPUT_TIMEOUT 0.8      // seconds before input expires
-#define DASH_TAP_THRESHOLD 0.4 // max time for a key press to count as a tap
+#define INPUT_BUFFER_SIZE 5
+#define INPUT_TIMEOUT 0.8       // seconds before input expires
+#define INPUT_TAP_THRESHOLD 0.4 // max time for a key press to count as a tap
 
 // attack durations
 #define DASH_DURATION 0.3
@@ -52,9 +52,6 @@ extern "C" {
 // depth scaling parameters
 #define DEPTH_SCALE_MIN 0.8
 #define DEPTH_SCALE_MAX 1.2
-
-// debug menu position
-#define DEBUG_MENU_START 70
 
 // utility macros
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -92,41 +89,6 @@ struct BufferInputEntry {
   double timestamp;
 };
 
-// Structure for combo definitions - makes it easy to add new combos
-struct ComboDefinition {
-  InputType sequence[5]; // max 5 inputs in a combo
-  int length;
-  PlayerState resultState;
-  double duration;
-  const char *name;
-};
-
-ComboDefinition combos[] = {
-    // Triple light attack (R-R-R)
-    {{INPUT_LIGHT, INPUT_LIGHT, INPUT_LIGHT},
-     3,
-     STATE_TRIPLE_LIGHT_ATTACK,
-     TRIPLE_ATTACK_DURATION,
-     "triple light"},
-    // Triple heavy attack (F-F-F)
-    {{INPUT_HEAVY, INPUT_HEAVY, INPUT_HEAVY},
-     3,
-     STATE_TRIPLE_HEAVY_ATTACK,
-     TRIPLE_ATTACK_DURATION,
-     "triple heavy"},
-    // Combo sequence (R-F-R)
-    {{INPUT_LIGHT, INPUT_HEAVY, INPUT_LIGHT},
-     3,
-     STATE_COMBO_SEQUENCE,
-     COMBO_SEQUENCE_DURATION,
-     "combo sequence"},
-    // Dash combos - double tap movement keys
-    {{INPUT_LEFT, INPUT_LEFT}, 2, STATE_DASH, DASH_DURATION, "dash left"},
-    {{INPUT_RIGHT, INPUT_RIGHT}, 2, STATE_DASH, DASH_DURATION, "dash right"},
-    {{INPUT_UP, INPUT_UP}, 2, STATE_DASH, DASH_DURATION, "dash up"},
-    {{INPUT_DOWN, INPUT_DOWN}, 2, STATE_DASH, DASH_DURATION, "dash down"}};
-const int comboCount = sizeof(combos) / sizeof(ComboDefinition);
-
 struct GameState {
   double playerX, playerY;
   double cameraX;
@@ -153,6 +115,35 @@ struct SDLResources {
   SDL_Surface *cloudTexture;
   SDL_Surface *floorTexture;
 };
+
+struct ComboDefinition {
+  PlayerState resultState;
+  InputType sequence[3]; // max 3 inputs in a combo
+  double duration;
+};
+
+ComboDefinition combos[] = {
+    {
+        STATE_TRIPLE_LIGHT_ATTACK,
+        {INPUT_LIGHT_ATTACK, INPUT_LIGHT_ATTACK, INPUT_LIGHT_ATTACK},
+        TRIPLE_ATTACK_DURATION,
+    },
+    {
+        STATE_TRIPLE_HEAVY_ATTACK,
+        {INPUT_HEAVY_ATTACK, INPUT_HEAVY_ATTACK, INPUT_HEAVY_ATTACK},
+        TRIPLE_ATTACK_DURATION,
+    },
+    {
+        STATE_COMBO_SEQUENCE,
+        {INPUT_LIGHT_ATTACK, INPUT_HEAVY_ATTACK, INPUT_LIGHT_ATTACK},
+        COMBO_SEQUENCE_DURATION,
+    },
+    {STATE_DASH, {INPUT_LEFT, INPUT_LEFT, INPUT_NONE}, DASH_DURATION},
+    {STATE_DASH, {INPUT_RIGHT, INPUT_RIGHT, INPUT_NONE}, DASH_DURATION},
+    {STATE_DASH, {INPUT_UP, INPUT_UP, INPUT_NONE}, DASH_DURATION},
+    {STATE_DASH, {INPUT_DOWN, INPUT_DOWN, INPUT_NONE}, DASH_DURATION}};
+
+const int comboCount = sizeof(combos) / sizeof(ComboDefinition);
 
 void DrawString(SDL_Surface *screen, int x, int y, const char *text,
                 SDL_Surface *charset) {
@@ -217,41 +208,38 @@ void InitGame(GameState *game) {
 }
 
 void AddInput(GameState *game, InputType input) {
-  if (game->bufferCount >= INPUT_BUFFER_SIZE) {
-    // shift buffer left to make room
-    for (int i = 0; i < INPUT_BUFFER_SIZE - 1; i++) {
-      game->inputBuffer[i] = game->inputBuffer[i + 1];
-    }
-    game->bufferCount = INPUT_BUFFER_SIZE - 1;
+  if (game->bufferCount < INPUT_BUFFER_SIZE) {
+    game->bufferCount++;
   }
 
-  game->inputBuffer[game->bufferCount].type = input;
-  game->inputBuffer[game->bufferCount].timestamp = game->worldTime;
-  game->bufferCount++;
+  for (int i = game->bufferCount - 1; i > 0; i--) {
+    game->inputBuffer[i] = game->inputBuffer[i - 1];
+  }
+
+  game->inputBuffer[0].type = input;
+  game->inputBuffer[0].timestamp = game->worldTime;
   game->lastInputTime = game->worldTime;
 }
 
 void CleanInputBuffer(GameState *game) {
-  int writeIdx = 0;
-  for (int i = 0; i < game->bufferCount; i++) {
-    if (game->worldTime - game->inputBuffer[i].timestamp < INPUT_TIMEOUT) {
-      if (writeIdx != i) {
-        game->inputBuffer[writeIdx] = game->inputBuffer[i];
-      }
-      writeIdx++;
+  int cutoff = 0;
+  for (cutoff = 0; cutoff < game->bufferCount; cutoff++) {
+    if (game->worldTime - game->inputBuffer[cutoff].timestamp > INPUT_TIMEOUT) {
+      break;
     }
   }
-  game->bufferCount = writeIdx;
+
+  game->bufferCount = cutoff;
 }
 
 bool MatchesCombo(GameState *game, ComboDefinition *combo) {
-  if (game->bufferCount < combo->length)
-    return false;
+  for (int i = 0; i <= 3; i++) {
+    InputType comboInput = combo->sequence[i];
+    if (comboInput == INPUT_NONE)
+      break;
 
-  // check last inputs to match the combo
-  int startIdx = game->bufferCount - combo->length;
-  for (int i = 0; i < combo->length; i++) {
-    if (game->inputBuffer[startIdx + i].type != combo->sequence[i]) {
+    // check if input matches or if buffer is too short
+    if (game->inputBuffer[i].type != comboInput || i >= game->bufferCount) {
       return false;
     }
   }
