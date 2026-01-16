@@ -697,14 +697,12 @@ bool LoadResources(SDLResources *res) {
     printf("SDL_LoadBMP(vcr_osd_mono.bmp) error: %s\n", SDL_GetError());
     return false;
   }
-  SDL_SetColorKey(res->charset, true, 0x000000);
 
   res->spritemap = SDL_LoadBMP("./player_sprite.bmp");
   if (res->spritemap == NULL) {
     printf("SDL_LoadBMP(player_sprite.bmp) error: %s\n", SDL_GetError());
     return false;
   }
-  SDL_SetColorKey(res->spritemap, true, 0x000000);
 
   res->cloudTexture = SDL_LoadBMP("./texture_clouds.bmp");
   if (res->cloudTexture == NULL) {
@@ -738,9 +736,10 @@ int main(int argc, char **argv) {
 
   InitGame(&game);
 
+  int quit = 0;
+
   int timeLast = SDL_GetTicks();
   int frames = 0;
-  int quit = 0;
   double fpsTimer = 0;
   double fps = 0;
 
@@ -763,6 +762,7 @@ int main(int argc, char **argv) {
 
     RenderFrame(&res, &game, fps);
     HandleEvents(&game, &quit);
+
     frames++;
   }
 
