@@ -395,7 +395,7 @@ void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
   char bufferText[128] = "";
   int bufferPos = 0;
   for (int i = 0; i < game->bufferCount && bufferPos < 120; i++) {
-    const char *inputName = "?";
+    const char *inputName;
     switch (game->inputBuffer[i].type) {
     case INPUT_LIGHT:
       inputName = "R";
@@ -414,6 +414,9 @@ void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
       break;
     case INPUT_RIGHT:
       inputName = "D";
+      break;
+    default:
+      inputName = "?";
       break;
     }
     bufferPos +=
