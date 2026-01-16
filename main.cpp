@@ -64,23 +64,28 @@ const int SKY_HEIGHT = SCREEN_HEIGHT - FLOOR_HEIGHT;
 
 enum InputType {
   INPUT_NONE = 0,
-  INPUT_LIGHT = 1, // R key
-  INPUT_HEAVY = 2, // F key
-  INPUT_UP = 3,
-  INPUT_DOWN = 4,
-  INPUT_LEFT = 5,
-  INPUT_RIGHT = 6
+  INPUT_UP = 1,
+  INPUT_DOWN = 2,
+  INPUT_LEFT = 3,
+  INPUT_RIGHT = 4,
+  INPUT_LIGHT_ATTACK = 5,
+  INPUT_HEAVY_ATTACK = 6
 };
+const char *InputTypeNames[] = {"?",     "UP",    "DOWN", "LEFT",
+                                "RIGHT", "LIGHT", "HEAVY"};
 
 enum PlayerState {
   STATE_IDLE = 0,
   STATE_CROUCH_DEFENSE = 1,
   STATE_HEAVY_ATTACK = 2,
-  STATE_TRIPLE_LIGHT_ATTACK = 3, // Triple R press
-  STATE_TRIPLE_HEAVY_ATTACK = 4, // Triple F press
-  STATE_COMBO_SEQUENCE = 5,      // R-F-R sequence
-  STATE_DASH = 6                 // Quick movement dash
+  STATE_TRIPLE_LIGHT_ATTACK = 3,
+  STATE_TRIPLE_HEAVY_ATTACK = 4,
+  STATE_COMBO_SEQUENCE = 5,
+  STATE_DASH = 6
 };
+const char *PlayerStateNames[] = {
+    "IDLE",         "CROUCH_DEFENSE", "HEAVY_ATTACK", "TRIPLE_LIGHT",
+    "TRIPLE_HEAVY", "COMBO_SEQUENCE", "DASH"};
 
 struct BufferInputEntry {
   InputType type;
@@ -133,11 +138,9 @@ struct GameState {
   BufferInputEntry inputBuffer[INPUT_BUFFER_SIZE];
   int bufferCount;
   double lastInputTime;
-  int debugMenuEnabled;
-  char currentActionName[64];
-
-  // track key press times for tap detection (W/A/S/D)
   double keyPressTime[4];
+
+  int debugMenuEnabled;
 };
 
 struct SDLResources {
@@ -218,10 +221,7 @@ void InitGame(GameState *game) {
   game->bufferCount = 0;
   game->lastInputTime = 0;
   game->debugMenuEnabled = 0;
-  strncpy(game->currentActionName, "idle", sizeof(game->currentActionName) - 1);
-  game->currentActionName[sizeof(game->currentActionName) - 1] = '\0';
 
-  // initialize key press times
   for (int i = 0; i < 4; i++) {
     game->keyPressTime[i] = 0;
   }
@@ -283,11 +283,6 @@ void CheckCombos(GameState *game) {
 
     game->state = combos[i].resultState;
     game->attackTimer = combos[i].duration;
-    strncpy(game->currentActionName, combos[i].name,
-            sizeof(game->currentActionName) - 1);
-    game->currentActionName[sizeof(game->currentActionName) - 1] = '\0';
-
-    // clear buffer after successful combo
     game->bufferCount = 0;
 
     return;
@@ -386,7 +381,7 @@ void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
 
   char text[128];
   snprintf(text, sizeof(text), "DEBUG MENU - Current Action: %s",
-           game->currentActionName);
+           PlayerStateNames[(int)game->state]);
   DrawString(screen, 16, DEBUG_MENU_START + 4, text, charset);
 
   snprintf(text, sizeof(text), "Input Buffer (%d):", game->bufferCount);
@@ -394,35 +389,13 @@ void DrawDebugMenu(SDL_Surface *screen, SDL_Surface *charset, GameState *game,
 
   char bufferText[128] = "";
   int bufferPos = 0;
-  for (int i = 0; i < game->bufferCount && bufferPos < 120; i++) {
-    const char *inputName;
-    switch (game->inputBuffer[i].type) {
-    case INPUT_LIGHT:
-      inputName = "R";
-      break;
-    case INPUT_HEAVY:
-      inputName = "F";
-      break;
-    case INPUT_UP:
-      inputName = "W";
-      break;
-    case INPUT_DOWN:
-      inputName = "S";
-      break;
-    case INPUT_LEFT:
-      inputName = "A";
-      break;
-    case INPUT_RIGHT:
-      inputName = "D";
-      break;
-    default:
-      inputName = "?";
-      break;
-    }
-    bufferPos +=
-        snprintf(bufferText + bufferPos, sizeof(bufferText) - bufferPos, "%s%s",
-                 inputName, (i < game->bufferCount - 1) ? "-" : "");
+  for (int i = 0; i < game->bufferCount; i++) {
+    InputType inputType = game->inputBuffer[i].type;
+    bufferPos += snprintf(
+        bufferText + bufferPos, sizeof(bufferText) - bufferPos, "%s%s",
+        InputTypeNames[(int)inputType], (i < game->bufferCount - 1) ? "-" : "");
   }
+
   snprintf(text, sizeof(text), "[%s]", bufferText);
   DrawString(screen, 16, DEBUG_MENU_START + 32, text, charset);
 }
@@ -482,41 +455,31 @@ void UpdateAttackState(GameState *game, double delta) {
 
     if (game->attackTimer <= 0) {
       game->state = STATE_IDLE;
-      strncpy(game->currentActionName, "idle",
-              sizeof(game->currentActionName) - 1);
-      game->currentActionName[sizeof(game->currentActionName) - 1] = '\0';
     }
   }
 
-  // clean expired inputs from buffer
   CleanInputBuffer(game);
 }
 
 void StartLightAttack(GameState *game) {
-  AddInput(game, INPUT_LIGHT);
+  AddInput(game, INPUT_LIGHT_ATTACK);
   CheckCombos(game);
 
   // if no combo was triggered, do basic attack
   if (game->state == STATE_IDLE) {
     game->state = STATE_CROUCH_DEFENSE;
     game->attackTimer = CROUCH_DEFENSE_DURATION;
-    strncpy(game->currentActionName, "crouch defense",
-            sizeof(game->currentActionName) - 1);
-    game->currentActionName[sizeof(game->currentActionName) - 1] = '\0';
   }
 }
 
 void StartHeavyAttack(GameState *game) {
-  AddInput(game, INPUT_HEAVY);
+  AddInput(game, INPUT_HEAVY_ATTACK);
   CheckCombos(game);
 
   // if no combo was triggered, do basic attack
   if (game->state == STATE_IDLE) {
     game->state = STATE_HEAVY_ATTACK;
     game->attackTimer = HEAVY_ATTACK_DURATION;
-    strncpy(game->currentActionName, "heavy attack",
-            sizeof(game->currentActionName) - 1);
-    game->currentActionName[sizeof(game->currentActionName) - 1] = '\0';
   }
 }
 
