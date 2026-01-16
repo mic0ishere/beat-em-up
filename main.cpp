@@ -319,30 +319,24 @@ void DrawPlayer(SDL_Surface *screen, SDL_Surface *spritemap, GameState *game) {
   dest.w = (int)(SPRITE_WIDTH * depthScale);
   dest.h = (int)(SPRITE_HEIGHT * depthScale);
 
-  // sprites in first row:
-  // standing(0) | crouch_defense(1) | light_defense_attack(2) |
-  // hand_long_attack(3) | stomach_attack(4) | stomach_attack_prepare(5) |
-  // jump_forward(6) | jump_landing(7)
   int spriteIndex = 0;
-  int spriteRow = 0;
 
   if (game->state == STATE_CROUCH_DEFENSE) {
-    spriteIndex = 1; // crouch_defense for defense
+    spriteIndex = 1;
   } else if (game->state == STATE_HEAVY_ATTACK) {
-    spriteIndex = 3; // hand_long_attack for heavy attack
+    spriteIndex = 3;
   } else if (game->state == STATE_TRIPLE_LIGHT_ATTACK) {
-    spriteIndex = 2; // light_defense_attack for triple light
+    spriteIndex = 2;
   } else if (game->state == STATE_TRIPLE_HEAVY_ATTACK) {
-    spriteIndex = 4; // stomach_attack for triple heavy
+    spriteIndex = 4;
   } else if (game->state == STATE_COMBO_SEQUENCE) {
-    spriteIndex = 5; // stomach_attack_prepare for combo
+    spriteIndex = 5;
   } else if (game->state == STATE_DASH) {
-    spriteRow = 2;   // row 3 (index 2)
-    spriteIndex = 1; // column 2 (index 1)
+    spriteIndex = 6;
   }
 
   source.x = spriteIndex * SPRITE_SRC_WIDTH;
-  source.y = spriteRow * SPRITE_SRC_HEIGHT;
+  source.y = 0;
   dest.x = screenX;
   dest.y = screenY - dest.h; // use scaled height to position correctly
   SDL_BlitScaled(spritemap, &source, screen, &dest);
