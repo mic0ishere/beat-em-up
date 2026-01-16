@@ -520,70 +520,45 @@ void StartHeavyAttack(GameState *game) {
   }
 }
 
-void UpdateCamera(GameState *game, double delta) {
-  double targetCameraX = game->playerX - SCREEN_WIDTH / 2;
+void HandleKeyMovement(GameState *game, SDL_Keycode key, int isKeyDown,
+                       bool repeat) {
+  int *direction = NULL;
+  InputType inputType = INPUT_NONE;
 
-  if (targetCameraX < 0)
-    targetCameraX = 0;
-  if (targetCameraX > STAGE_WIDTH - SCREEN_WIDTH)
-    targetCameraX = STAGE_WIDTH - SCREEN_WIDTH;
+  switch (key) {
+  case SDLK_a:
+    direction = &game->moveLeft;
+    inputType = INPUT_LEFT;
+    break;
 
-  double cameraDiff = targetCameraX - game->cameraX;
-  game->cameraX += cameraDiff * CAMERA_SMOOTH_FACTOR * delta;
-}
-
-void HandleMovementKeyDown(GameState *game, SDL_Keycode key, bool repeat) {
-  int keyIndex = -1;
-  int *moveFlag = NULL;
-
-  if (key == SDLK_a) {
-    keyIndex = 1;
-    moveFlag = &game->moveLeft;
-  } else if (key == SDLK_d) {
-    keyIndex = 3;
-    moveFlag = &game->moveRight;
-  } else if (key == SDLK_w) {
-    keyIndex = 0;
-    moveFlag = &game->moveUp;
-  } else if (key == SDLK_s) {
-    keyIndex = 2;
-    moveFlag = &game->moveDown;
+  case SDLK_d:
+    direction = &game->moveRight;
+    inputType = INPUT_RIGHT;
+    break;
+  case SDLK_w:
+    direction = &game->moveUp;
+    inputType = INPUT_UP;
+    break;
+  case SDLK_s:
+    direction = &game->moveDown;
+    inputType = INPUT_DOWN;
+    break;
+  default:
+    return;
   }
 
-  if (moveFlag) {
+  int keyIndex = (int)inputType - 1;
+
+  if (isKeyDown) {
+    *direction = 1;
+
     if (!repeat) {
       game->keyPressTime[keyIndex] = game->worldTime;
     }
-    *moveFlag = 1;
-  }
-}
+  } else {
+    *direction = 0;
 
-void HandleMovementKeyUp(GameState *game, SDL_Keycode key) {
-  int keyIndex = -1;
-  int *moveFlag = NULL;
-  InputType inputType = INPUT_NONE;
-
-  if (key == SDLK_a) {
-    keyIndex = 1;
-    moveFlag = &game->moveLeft;
-    inputType = INPUT_LEFT;
-  } else if (key == SDLK_d) {
-    keyIndex = 3;
-    moveFlag = &game->moveRight;
-    inputType = INPUT_RIGHT;
-  } else if (key == SDLK_w) {
-    keyIndex = 0;
-    moveFlag = &game->moveUp;
-    inputType = INPUT_UP;
-  } else if (key == SDLK_s) {
-    keyIndex = 2;
-    moveFlag = &game->moveDown;
-    inputType = INPUT_DOWN;
-  }
-
-  if (moveFlag) {
-    *moveFlag = 0;
-    if (game->worldTime - game->keyPressTime[keyIndex] < DASH_TAP_THRESHOLD) {
+    if (game->worldTime - game->keyPressTime[keyIndex] < INPUT_TAP_THRESHOLD) {
       AddInput(game, inputType);
       CheckCombos(game);
     }
@@ -606,10 +581,10 @@ void HandleEvents(GameState *game, int *quit) {
       else if (event.key.keysym.sym == SDLK_f)
         StartHeavyAttack(game);
       else
-        HandleMovementKeyDown(game, event.key.keysym.sym, event.key.repeat);
+        HandleKeyMovement(game, event.key.keysym.sym, true, event.key.repeat);
       break;
     case SDL_KEYUP:
-      HandleMovementKeyUp(game, event.key.keysym.sym);
+      HandleKeyMovement(game, event.key.keysym.sym, false, NULL);
       break;
     case SDL_QUIT:
       *quit = 1;
